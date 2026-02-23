@@ -69,38 +69,19 @@ def count_cells(img_org, return_map=False):
 
 
 #Solo se va a procesar una img a la vez, como en ficron
-def count_cells(img_org, return_map=False):
-
-
+def count_cells(img_org, channel=None, return_map=False):
     """
-    if img_org is None:
-        raise ValueError("img_org no puede ser None")
-
-    img_np = np.asarray(img_org)
-
-
+    Procesa la imagen y realiza predicciones según el canal especificado.
     
-    #Cosas de formato de la imagen -> resolver dudas 
-    if img_np.ndim == 2:
-        img_rgb = np.stack([img_np, img_np, img_np], axis=-1)
-    elif img_np.ndim == 3 and img_np.shape[2] >= 2:
-        ch1 = img_np[:, :, 0]
-        ch4 = img_np[:, :, 1]
-        img_rgb = np.stack([ch1, ch4, ch1], axis=-1)
-    elif img_np.ndim == 3 and img_np.shape[2] == 1:
-        img_rgb = np.repeat(img_np, 3, axis=2)
-    else:
-        raise ValueError(f"Formato de imagen no soportado: {img_np.shape}")
-
-    img_rgb = img_rgb.astype(np.float32)
-    max_val = float(img_rgb.max()) if img_rgb.size else 0.0
-    if max_val > 1.0:
-        scale = 65535.0 if max_val > 255.0 else 255.0
-        img_rgb = img_rgb / scale
-
-    img_tensor = torch.from_numpy(img_rgb).permute(2, 0, 1).unsqueeze(0).float().to(device)
+    Args:
+        img_org: Imagen de entrada
+        channel: Canal a procesar (0 para CH1/núcleos, 2 para CH3/parásitos, None para ambos) (Aunque no deberia hacerse nunca lo de ambos)
+        return_map: Si True, devuelve los mapas de densidad
+    
+    Returns:
+        Si return_map=True: ([mask_p, mask_c, mask_i], resul_predict)
+        Si return_map=False: resul_predict
     """
-
     #PROCESADO IMG COMO EN TFM
     #Se asume que img está cargada
     if img_org is None:
@@ -116,17 +97,34 @@ def count_cells(img_org, return_map=False):
     #Se pasa a tensor
     img_tensor = torch.FloatTensor(image_np).unsqueeze(0)
 
+    # Inicializar máscaras vacías
+    mask_p = None
+    mask_c = None
 
+    # Validar canal si se especifica
+    if channel is not None and channel not in [0, 2]:
+        raise ValueError("channel debe ser 0, 2 o None")
 
-    #Mascara de parásitos 
-    with torch.no_grad():
-        mask_p = model_p(img_tensor).squeeze().detach().cpu().numpy()
+    # Predicción según el canal
+    if channel is None or channel == 2:
+        # Canal CH3 (parásitos)
+        with torch.no_grad():
+            mask_p = model_p(img_tensor).squeeze().detach().cpu().numpy()
+    
+    if channel is None or channel == 0:
+        # Canal CH1 (núcleos)
+        with torch.no_grad():
+            mask_c = model_c(img_tensor).squeeze().detach().cpu().numpy()
 
-    #Mascara de núcleos 
-    with torch.no_grad():
-        mask_c = model_c(img_tensor).squeeze().detach().cpu().numpy()
+    # Crear máscaras vacías para los canales no procesados
+    if mask_p is None:
+        h, w = image_np.shape[1], image_np.shape[2]
+        mask_p = np.zeros((h, w), dtype=np.float32)
+    if mask_c is None:
+        h, w = image_np.shape[1], image_np.shape[2]
+        mask_c = np.zeros((h, w), dtype=np.float32)
 
-    #Como las otras funciones esperan una salida de 3 mapas, se devuelve esto vacio por ahora
+    # Máscara de infectados vacía porque se esperan 3 valores de mascara
     mask_i = np.zeros_like(mask_c, dtype=np.float32)
 
     resul_predict = np.zeros((3,), dtype=float)
