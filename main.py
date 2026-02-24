@@ -232,6 +232,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.res_par.setText(str(round(data_result[0], 1)))
         self.res_macrop.setText(str(round(data_result[1], 1)))
         self.res_inf.setText(str(round(data_result[2], 1)))
+        if hasattr(self, 'res_sanas'):
+            self.res_sanas.setText("")
+        if hasattr(self, 'res_media'):
+            self.res_media.setText("")
+        if hasattr(self, 'res_pct'):
+            self.res_pct.setText("")
 
 
     #Esto llama al count_cells de ficron desde la funcion definida en count_util
@@ -370,13 +376,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         infectadas = 0
         sanas = n_nucleos
         media_parasitos = 0.0
+        pct_infectadas = 0.0
         asociaciones = {}
         
         # Asociación parásito -> núcleo si tenemos ambos
         if len(coords_ch1) > 0 and len(coords_ch3) > 0:
             draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
             asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch3, draw_aux)
-            infectadas, sanas, media_parasitos = c_util.resumen(asociaciones, len(coords_ch1))
+            infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_ch1))
 
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch3
@@ -387,6 +394,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.res_par.setText(str(n_parasitos))
         self.res_macrop.setText(str(n_nucleos))
         self.res_inf.setText(str(infectadas))
+        if hasattr(self, 'res_sanas'):
+            self.res_sanas.setText(str(sanas))
+        if hasattr(self, 'res_media'):
+            self.res_media.setText(f"{media_parasitos:.2f}")
+        if hasattr(self, 'res_pct'):
+            self.res_pct.setText(f"{pct_infectadas:.1f}%")
         
         self.state_process.setText(
             f"{self.r_number} | Núcleos (CH1): {n_nucleos}, Parásitos (CH3): {n_parasitos}, "
@@ -412,10 +425,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if len(coords_ch1) > 0 and len(coords_ch4) > 0:
             draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
             asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch4, draw_aux)
-            infectadas, sanas, media_parasitos = c_util.resumen(asociaciones, len(coords_ch1))
+            infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_ch1))
         else:
             asociaciones = {}
             infectadas, sanas, media_parasitos = 0, len(coords_ch1), 0.0
+            pct_infectadas = 0.0
 
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch4
@@ -426,6 +440,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.res_par.setText(str(n_parasitos))
         self.res_macrop.setText(str(n_nucleos))
         self.res_inf.setText(str(infectadas))
+        if hasattr(self, 'res_sanas'):
+            self.res_sanas.setText(str(sanas))
+        if hasattr(self, 'res_media'):
+            self.res_media.setText(f"{media_parasitos:.2f}")
+        if hasattr(self, 'res_pct'):
+            self.res_pct.setText(f"{pct_infectadas:.1f}%")
 
         self.state_process.setText(
             f"Listo | Núcleos: {n_nucleos}, Parásitos: {n_parasitos}, "

@@ -432,7 +432,11 @@ def resumen(asociaciones, total_celulas):
     sanas = total_celulas - infectadas
     total_parasitos = sum(len(v) for v in asociaciones.values())
     media_parasitos = total_parasitos / infectadas if infectadas > 0 else 0
-    return infectadas, sanas, media_parasitos
+    #return infectadas, sanas, media_parasitos
+
+    #Se ha modificado esta funcion del TFM para que además calcule el porcentaje de células infectadas
+    pct_infectadas = (infectadas / total_celulas * 100) if total_celulas > 0 else 0
+    return infectadas, sanas, media_parasitos, pct_infectadas
 
 def analizar_infeccion(nombre, carpeta_coords, carpeta_salida):
     path_ch1 = os.path.join(carpeta_coords, f"{nombre}_CH1_pred.txt")
@@ -456,13 +460,13 @@ def analizar_infeccion(nombre, carpeta_coords, carpeta_salida):
     img1 = img_base.copy()
     draw1 = ImageDraw.Draw(img1)
     asociaciones1 = asociar_por_distancia_minima(coords_ch1, coords_ch4, draw1)
-    inf1, san1, media1 = resumen(asociaciones1, len(coords_ch1))
+    inf1, san1, media1, pct1 = resumen(asociaciones1, len(coords_ch1))
 
     # Versión 2: clustering
     img2 = img_base.copy()
     draw2 = ImageDraw.Draw(img2)
     asociaciones2 = asociar_por_clustering(coords_ch1, coords_ch4, draw2)
-    inf2, san2, media2 = resumen(asociaciones2, len(coords_ch1))
+    inf2, san2, media2, pct2 = resumen(asociaciones2, len(coords_ch1))
 
     fig, axs = plt.subplots(1, 2, figsize=(16, 8))
     axs[0].imshow(img1)
