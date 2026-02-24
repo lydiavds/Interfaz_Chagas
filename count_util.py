@@ -59,14 +59,22 @@ def save_multi_frame_tiff(image_array, size_img, name_file):
 def convert_uint16(img):
     imin = img.min(axis=(0, 1))
     imax = img.max(axis=(0, 1))
+    
+    # Evitar división por cero cuando imax == imin (imagen uniforme)
+    denom = imax - imin
+    denom = np.where(denom == 0, 1, denom)
 
-    return (65535 * (img - imin) / imax).astype(np.uint16)
+    return (65535 * (img - imin) / denom).astype(np.uint16)
 
 def convert_uint8(img):
     imin = img.min(axis=(0, 1))
     imax = img.max(axis=(0, 1))
-
-    return (255. * (img - imin) / imax).astype(np.uint8)
+    
+    # Evitar división por cero cuando imax == imin (imagen uniforme)
+    denom = imax - imin
+    denom = np.where(denom == 0, 1, denom)
+    
+    return (255. * (img - imin) / denom).astype(np.uint8)
 
 
 def convert_gray2bgr(img):

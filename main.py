@@ -40,6 +40,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.img_ch3 = None  # Imagen del canal CH3 (parásitos)
         self.r_number = None  # Número r compartido entre ambas imágenes
         self.current_filename = None
+        self.channel_images = {}  # {1: np.array, 2: np.array, 3: np.array, 4: np.array}
+        self.current_display_channel = 1
+
+        self.coords_nucleos = np.empty((0, 2), dtype=float)
+        self.coords_parasitos = np.empty((0, 2), dtype=float)
+        self.association_lines = []  # [(x1, y1, x2, y2), ...]
+
+        self.channel_group = QtWidgets.QButtonGroup(self)
+        self.channel_group.setExclusive(True)
+        self.channel_group.addButton(self.checkCell)
+        if hasattr(self, 'checkCH2'):
+            self.channel_group.addButton(self.checkCH2)
+        self.channel_group.addButton(self.checkDapi)
+        if hasattr(self, 'checkCH4'):
+            self.channel_group.addButton(self.checkCH4)
+        self.checkCell.setChecked(True)
 
         if hasattr(self, 'btn_analizar'):
             self.btn_analizar.clicked.connect(self.analizar_imagen_actual)
@@ -70,7 +86,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if pattern:
             # Imagen con patrón detectado
             self.r_number = pattern.group(1)
-            current_channel = pattern.group(2)
+            current_channel = int(pattern.group(2))
             self.current_filename = fileName
             
             # Cargar la imagen actual (la que se mostró en el diálogo)
@@ -84,40 +100,42 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
             
-            # Guardar imagen actual en img_org_2ch para visualización
-            self.img_org_2ch = img_raw
-            img_tmp = c_util.convert_uint8(self.img_org_2ch)
-            self.img_org_rgb = img_tmp
-            self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
-            
-            # Buscar y cargar CH1 (núcleos) y CH3 (parásitos) para análisis
-            ch1_name = f"{self.r_number}_CH1.tif"
-            ch1_path = os.path.join(dir_path, ch1_name)
-            ch3_name = f"{self.r_number}_CH3.tif"
-            ch3_path = os.path.join(dir_path, ch3_name)
-            
-            msgs = []
-            if os.path.exists(ch1_path):
-                self._load_single_image(ch1_path, 1)
-                msgs.append('CH1')
-            else:
-                self.img_ch1 = None
-            
-            if os.path.exists(ch3_path):
-                self._load_single_image(ch3_path, 3)
-                msgs.append('CH3')
-            else:
-                self.img_ch3 = None
-            
-            if msgs:
-                self.state_process.setText(f'Cargado {self.r_number}_CH{current_channel} para visualización. Detectados: {", ".join(msgs)}')
-            else:
-                self.state_process.setText(f'Advertencia: No se encontraron CH1 ni CH3 para {self.r_number}')
+            self.channel_images = {}
+            for channel_num in (1, 2, 3, 4):
+                channel_path = os.path.join(dir_path, f"{self.r_number}_CH{channel_num}.tif")
+                if os.path.exists(channel_path):
+                    self.channel_images[channel_num] = self._load_single_image(channel_path)
+
+            if current_channel not in self.channel_images:
+                self.channel_images[current_channel] = img_raw
+
+            self.img_ch1 = self.channel_images.get(1)
+            self.img_ch3 = self.channel_images.get(3)
+
+            if current_channel in self.channel_images:
+                self.current_display_channel = current_channel
+            elif 1 in self.channel_images:
+                self.current_display_channel = 1
+            elif 2 in self.channel_images:
+                self.current_display_channel = 2
+            elif 3 in self.channel_images:
+                self.current_display_channel = 3
+            elif 4 in self.channel_images:
+                self.current_display_channel = 4
+
+            self._set_channel_checkbox(self.current_display_channel)
+            self._set_current_display_image()
+
+            ch_available = ", ".join([f"CH{ch}" for ch in sorted(self.channel_images.keys())])
+            self.state_process.setText(
+                f"Cargado {self.r_number}_CH{current_channel} | Canales disponibles: {ch_available}"
+            )
         else:
             # Imagen sin patrón, cargar de forma tradicional
             self.r_number = None
             self.img_ch1 = None
             self.img_ch3 = None
+            self.channel_images = {}
             img_raw = np.squeeze(np.asarray(c_util.read_tiff(fileName)))
             if img_raw.ndim == 2:
                 img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
@@ -133,13 +151,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.img_org_rgb = img_tmp
             self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
             self.state_process.setText('Imagen cargada (modo tradicional)')
+
+        self.coords_nucleos = np.empty((0, 2), dtype=float)
+        self.coords_parasitos = np.empty((0, 2), dtype=float)
+        self.association_lines = []
         
         self.checkView_maps.setChecked(False)
         self.density_maps = None
         self.update_view()
     
-    def _load_single_image(self, filepath, channel):
-        """Carga una imagen individual y la asigna al canal correspondiente (solo para análisis)"""
+    def _load_single_image(self, filepath):
+        """Carga una imagen individual en formato RGB numpy."""
         img_raw = np.squeeze(np.asarray(c_util.read_tiff(filepath)))
         if img_raw.ndim == 2:
             img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
@@ -149,11 +171,62 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             img_raw = np.moveaxis(img_raw[:3, :, :], 0, -1)
         else:
             raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
-        
-        if channel == 1:
-            self.img_ch1 = img_raw
-        elif channel == 3:
-            self.img_ch3 = img_raw
+        return img_raw
+
+    def _set_channel_checkbox(self, channel_num):
+        if channel_num == 1:
+            self.checkCell.setChecked(True)
+        elif channel_num == 2 and hasattr(self, 'checkCH2'):
+            self.checkCH2.setChecked(True)
+        elif channel_num == 3:
+            self.checkDapi.setChecked(True)
+        elif channel_num == 4 and hasattr(self, 'checkCH4'):
+            self.checkCH4.setChecked(True)
+
+    def _selected_channel_number(self):
+        if self.checkCell.isChecked():
+            return 1
+        if hasattr(self, 'checkCH2') and self.checkCH2.isChecked():
+            return 2
+        if self.checkDapi.isChecked():
+            return 3
+        if hasattr(self, 'checkCH4') and self.checkCH4.isChecked():
+            return 4
+        self.checkCell.setChecked(True)
+        return 1
+
+    def _set_current_display_image(self):
+        if self.channel_images:
+            self.img_org_2ch = self.channel_images.get(self.current_display_channel, next(iter(self.channel_images.values())))
+            img_tmp = c_util.convert_uint8(self.img_org_2ch)
+            self.img_org_rgb = img_tmp
+            self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
+
+    def _render_overlay(self, base_img):
+        img_pil = Image.fromarray(base_img.copy())
+        draw = ImageDraw.Draw(img_pil)
+
+        for x, y in self.coords_nucleos:
+            draw.ellipse((x - 2, y - 2, x + 2, y + 2), outline="red", width=1)
+
+        for x, y in self.coords_parasitos:
+            draw.line((x - 3, y, x + 3, y), fill="yellow", width=1)
+            draw.line((x, y - 3, x, y + 3), fill="yellow", width=1)
+
+        for x1, y1, x2, y2 in self.association_lines:
+            draw.line((x1, y1, x2, y2), fill="cyan", width=1)
+
+        return np.array(img_pil)
+
+    def _build_association_lines(self, asociaciones, coords_ch1):
+        lines = []
+        for idx_celula, pars in asociaciones.items():
+            if idx_celula >= len(coords_ch1):
+                continue
+            x2, y2 = coords_ch1[idx_celula]
+            for x1, y1 in pars:
+                lines.append((float(x1), float(y1), float(x2), float(y2)))
+        return lines
 
     def result_count(self, data_result):
         self.res_par.setText(str(round(data_result[0], 1)))
@@ -165,17 +238,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def count_img(self):
         self.analizar_imagen_actual()
 
-    def update_view(self):
+    def update_view(self, *args):
         if self.img_org_2ch is None:
             return
-        if self.checkCell.isChecked():
-            channel = 0
-        else:
-            channel = 2
+
+        self.current_display_channel = self._selected_channel_number()
+        self._set_current_display_image()
+        channel = max(0, min(2, self.current_display_channel - 1))
+
         if self.checkView_maps.isChecked() and self.density_maps is not None:
-            self.img_view = c_util.merge_img_map(self.img_org_2ch_rgb[channel], self.density_maps)
+            base_img = c_util.merge_img_map(self.img_org_2ch_rgb[channel], self.density_maps)
         else:
-            self.img_view = self.img_org_rgb
+            base_img = self.img_org_rgb
+
+        self.img_view = self._render_overlay(base_img)
 
         self.set_view_image(self.img_view)
 
@@ -294,27 +370,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         infectadas = 0
         sanas = n_nucleos
         media_parasitos = 0.0
-        
-        # Siempre usar la imagen cargada para visualización
-        base = self.img_org_rgb.copy()
-        img_pil = Image.fromarray(base)
-        draw = ImageDraw.Draw(img_pil)
-        
-        # Dibujar núcleos detectados en CH1 (rojo)
-        for x, y in coords_ch1:
-            draw.ellipse((x - 2, y - 2, x + 2, y + 2), outline="red", width=1)
-        
-        # Dibujar parásitos detectados en CH3 (amarillo)
-        for x, y in coords_ch3:
-            draw.line((x - 3, y, x + 3, y), fill="yellow", width=1)
-            draw.line((x, y - 3, x, y + 3), fill="yellow", width=1)
+        asociaciones = {}
         
         # Asociación parásito -> núcleo si tenemos ambos
         if len(coords_ch1) > 0 and len(coords_ch3) > 0:
-            asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch3, draw)
+            draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
+            asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch3, draw_aux)
             infectadas, sanas, media_parasitos = c_util.resumen(asociaciones, len(coords_ch1))
-        
-        self.set_view_image(np.array(img_pil))
+
+        self.coords_nucleos = coords_ch1
+        self.coords_parasitos = coords_ch3
+        self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
+        self.update_view()
         
         # Actualizar resultados
         self.res_par.setText(str(n_parasitos))
@@ -341,30 +408,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         n_parasitos, centros_ch4_xy = c_util.contar_parasitos_dbscan( self.img_org_2ch_rgb[2], pred_ch4 )
         coords_ch4 = np.array(centros_ch4_xy, dtype=float) if len(centros_ch4_xy) else np.empty((0, 2), dtype=float)
 
-        # 4) Overlay en imagen RGB completa
-        base = self.img_org_rgb.copy()
-        img_pil = Image.fromarray(base)
-        draw = ImageDraw.Draw(img_pil)
-
-        # Dibujar núcleos (rojo)
-        for x, y in coords_ch1:
-            draw.ellipse((x - 2, y - 2, x + 2, y + 2), outline="red", width=1)
-
-        # Dibujar parásitos (amarillo)
-        for x, y in coords_ch4:
-            draw.line((x - 3, y, x + 3, y), fill="yellow", width=1)
-            draw.line((x, y - 3, x, y + 3), fill="yellow", width=1)
-
-        # 5) Asignación parásito -> núcleo (líneas cian)
+        # 4) Asignación parásito -> núcleo (líneas cian)
         if len(coords_ch1) > 0 and len(coords_ch4) > 0:
-            asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch4, draw)
+            draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
+            asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch4, draw_aux)
             infectadas, sanas, media_parasitos = c_util.resumen(asociaciones, len(coords_ch1))
         else:
             asociaciones = {}
             infectadas, sanas, media_parasitos = 0, len(coords_ch1), 0.0
 
-        # Mostrar en QLabel principal
-        self.set_view_image(np.array(img_pil))
+        self.coords_nucleos = coords_ch1
+        self.coords_parasitos = coords_ch4
+        self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
+        self.update_view()
 
         # Actualizar resultados
         self.res_par.setText(str(n_parasitos))

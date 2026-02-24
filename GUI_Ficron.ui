@@ -99,30 +99,10 @@
          </property>
         </widget>
        </item>
-       <item row="4" column="0">
-        <widget class="QCheckBox" name="checkCell">
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="text">
-          <string notr="true">Cell</string>
-         </property>
-        </widget>
-       </item>
        <item row="3" column="1">
         <widget class="QPushButton" name="Button_try">
          <property name="text">
           <string notr="true">Count</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0">
-        <widget class="QCheckBox" name="checkDapi">
-         <property name="text">
-          <string notr="true">DAPI</string>
-         </property>
-         <property name="checked">
-          <bool>true</bool>
          </property>
         </widget>
        </item>
@@ -140,7 +120,32 @@ Map</string>
       </layout>
      </item>
      <item row="1" column="0">
-      <spacer name="verticalSpacer">
+      <widget class="QTabWidget" name="channelTabs">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="tab_ch1">
+        <attribute name="title">
+         <string>CH1</string>
+        </attribute>
+       </widget>
+       <widget class="QWidget" name="tab_ch2">
+        <attribute name="title">
+         <string>CH2</string>
+        </attribute>
+       </widget>
+       <widget class="QWidget" name="tab_ch3">
+        <attribute name="title">
+         <string>CH3</string>
+        </attribute>
+       </widget>
+       <widget class="QWidget" name="tab_ch4">
+        <attribute name="title">
+         <string>CH4</string>
+        </attribute>
+       </widget>
+      </widget>
+     </item>
        <property name="orientation">
         <enum>Qt::Vertical</enum>
        </property>
