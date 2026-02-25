@@ -74,6 +74,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if not fileName:
             self.state_process.setText('Selección cancelada.')
             return
+
+        self.path_dir = os.path.dirname(fileName)
+        self.text_path_dir.setText(fileName)
         
         # Extraer nombre del archivo sin extensión
         basename = os.path.basename(fileName)
@@ -256,6 +259,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             base_img = c_util.merge_img_map(self.img_org_2ch_rgb[channel], self.density_maps)
         else:
             base_img = self.img_org_rgb
+
+        if hasattr(self, 'checkBW') and self.checkBW.isChecked():
+            base_img = np.array(Image.fromarray(base_img).convert("L").convert("RGB"))
 
         self.img_view = self._render_overlay(base_img)
 
