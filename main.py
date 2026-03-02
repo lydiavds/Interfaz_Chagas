@@ -50,6 +50,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.channel_group = QtWidgets.QButtonGroup(self)
         self.channel_group.setExclusive(True)
         self.channel_group.addButton(self.checkCell)
+        #Se chequean ch2 y ch4 porque ch1 y ch3 se usan para la detección de parásitos y macrófagos
         if hasattr(self, 'checkCH2'):
             self.channel_group.addButton(self.checkCH2)
         self.channel_group.addButton(self.checkDapi)
@@ -205,6 +206,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.img_org_rgb = img_tmp
             self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
 
+    #Define los colores de las detecciones
     def _render_overlay(self, base_img):
         img_pil = Image.fromarray(base_img.copy())
         draw = ImageDraw.Draw(img_pil)
@@ -243,7 +245,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.res_pct.setText("")
 
 
-    #Esto llama al count_cells de ficron desde la funcion definida en count_util
     def count_img(self):
         self.analizar_imagen_actual()
 

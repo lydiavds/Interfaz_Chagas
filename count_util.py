@@ -398,6 +398,7 @@ def evaluar_modelo_solo_pred_1fig(
 
 #ASIGNACIÓN PARÁSITO-NUCELO CELULAR
 
+#Esta es la asignación que se acaba usando, ya que proporiciona mejores resultados
 def asociar_por_clustering(coords_ch1, coords_ch4, draw, eps=25, min_samples=1):
     asociaciones = defaultdict(list)
     clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(coords_ch4)
@@ -427,6 +428,7 @@ def asociar_por_distancia_minima(coords_ch1, coords_ch4, draw):
         draw.line((x1, y1, x2, y2), fill="cyan", width=1)
     return asociaciones
 
+#Calcula celulas sanas, media de parásitos por célula y ahora se ha añadido que calcule el porcentaje de células infectadas
 def resumen(asociaciones, total_celulas):
     infectadas = sum(1 for v in asociaciones.values() if len(v) > 0)
     sanas = total_celulas - infectadas

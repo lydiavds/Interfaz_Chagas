@@ -87,7 +87,8 @@ def count_cells(img_org, channel=None, return_map=False):
     if img_org is None:
         raise ValueError("img_org no puede ser None")
 
-    #Convertir a numpy si es PIL, si no se asume que ya es numpy
+    #Convertir a numpy y a rgb si es posible
+    #Transpose para que el canal esté en la primera dimensión (C, H, W) como espera PyTorch
     if hasattr(img_org, 'convert'):
         img_rgb = img_org.convert("RGB")
         image_np = np.array(img_rgb).transpose(2, 0, 1)
@@ -101,11 +102,11 @@ def count_cells(img_org, channel=None, return_map=False):
     mask_p = None
     mask_c = None
 
-    # Validar canal si se especifica
+    # Validar canal si se especifica (parásitos o núcleos (CH1, CH3))
     if channel is not None and channel not in [0, 2]:
         raise ValueError("channel debe ser 0, 2 o None")
 
-    # Predicción según el canal
+    # Predicción según el canal (parásitos o núcleos)
     if channel is None or channel == 2:
         # Canal CH3 (parásitos)
         with torch.no_grad():
@@ -137,6 +138,7 @@ def count_cells(img_org, channel=None, return_map=False):
 
     return resul_predict
 
+#Para cargar el modelo pytorch
 def load_model(path, model_class):
     """
     Carga un modelo PyTorch desde un archivo .pth
