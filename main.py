@@ -14,6 +14,8 @@ os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 
 from PIL import Image, ImageDraw
 import numpy as np
+import seaborn as sns
+
 
 #%%
 
@@ -41,11 +43,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.r_number = None  # Número r compartido entre ambas imágenes
         self.current_filename = None
         self.channel_images = {}  # {1: np.array, 2: np.array, 3: np.array, 4: np.array}
+        self.channel_density_maps = {}  # {1: [mask_p, mask_c, mask_i], 3: [...]}
         self.current_display_channel = 1
 
         self.coords_nucleos = np.empty((0, 2), dtype=float)
         self.coords_parasitos = np.empty((0, 2), dtype=float)
         self.association_lines = []  # [(x1, y1, x2, y2), ...]
+
+        if hasattr(self, 'checkShowCount'):
+            self.checkShowCount.setEnabled(False)
+            self.checkShowCount.setChecked(False)
 
         self.channel_group = QtWidgets.QButtonGroup(self)
         self.channel_group.setExclusive(True)
@@ -72,8 +79,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         options = QFileDialog.Options()
         fileName, _ = QFileDialog.getOpenFileName(self, "Open Image", "Lote_final_procesado/", "Images (*.tif *.lif)",
                                                   options=options)
+        
+        #Añadido para que cuando no se seleccione ninguna imagen, no se tome la imagen seleccionada como "", y simplemente cancele la seleccion
         if not fileName:
-            self.state_process.setText('Selección cancelada.')
+            self.state_process.setText('Selección cancelada.')  
             return
 
         self.path_dir = os.path.dirname(fileName)
@@ -105,6 +114,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
             
             self.channel_images = {}
+            self.channel_density_maps = {}
             for channel_num in (1, 2, 3, 4):
                 channel_path = os.path.join(dir_path, f"{self.r_number}_CH{channel_num}.tif")
                 if os.path.exists(channel_path):
@@ -135,11 +145,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 f"Cargado {self.r_number}_CH{current_channel} | Canales disponibles: {ch_available}"
             )
         else:
-            # Imagen sin patrón, cargar de forma tradicional
+            # Imagen sin patrón, cargar de forma tradicional (es decir, se hace toda la detección en la misma imagen)
             self.r_number = None
             self.img_ch1 = None
             self.img_ch3 = None
             self.channel_images = {}
+            self.channel_density_maps = {}
             img_raw = np.squeeze(np.asarray(c_util.read_tiff(fileName)))
             if img_raw.ndim == 2:
                 img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
@@ -159,6 +170,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.coords_nucleos = np.empty((0, 2), dtype=float)
         self.coords_parasitos = np.empty((0, 2), dtype=float)
         self.association_lines = []
+
+        if hasattr(self, 'checkShowCount'):
+            self.checkShowCount.setEnabled(False)
+            self.checkShowCount.setChecked(False)
         
         self.checkView_maps.setChecked(False)
         self.density_maps = None
@@ -205,6 +220,25 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             img_tmp = c_util.convert_uint8(self.img_org_2ch)
             self.img_org_rgb = img_tmp
             self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
+            self.density_maps = self.channel_density_maps.get(self.current_display_channel)
+
+    def _render_density_map(self, maps):
+        if maps is None or self.img_org_rgb is None:
+            return self.img_org_rgb
+
+        if self.current_display_channel == 1:
+            density_map = maps[1]  # núcleos
+        elif self.current_display_channel == 3:
+            density_map = maps[0]  # parásitos
+        else:
+            density_map = np.maximum(maps[0], maps[1])
+
+        density_norm = c_util.convert_uint8(density_map).astype(np.float32) / 255.0
+
+        
+        cmap = sns.color_palette("rocket", as_cmap=True)
+        heat_rgb = (cmap(density_norm)[..., :3] * 255).astype(np.uint8)
+        return heat_rgb
 
     #Define los colores de las detecciones
     def _render_overlay(self, base_img):
@@ -257,14 +291,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         channel = max(0, min(2, self.current_display_channel - 1))
 
         if self.checkView_maps.isChecked() and self.density_maps is not None:
-            base_img = c_util.merge_img_map(self.img_org_2ch_rgb[channel], self.density_maps)
+            base_img = self._render_density_map(self.density_maps)
         else:
             base_img = self.img_org_rgb
 
         if hasattr(self, 'checkBW') and self.checkBW.isChecked():
             base_img = np.array(Image.fromarray(base_img).convert("L").convert("RGB"))
 
-        self.img_view = self._render_overlay(base_img)
+        show_count = hasattr(self, 'checkShowCount') and self.checkShowCount.isEnabled() and self.checkShowCount.isChecked()
+        self.img_view = self._render_overlay(base_img) if show_count else base_img
 
         self.set_view_image(self.img_view)
 
@@ -283,66 +318,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         Devuelve predicciones usando los modelos cargados de ficron.
         """
 
-        """
-        # Convertir imagen a tensor (3 canales: B nuclei, G membrane, R parasites)
-        img_np = np.squeeze(np.asarray(self.img_org_2ch))
-        if img_np.ndim == 2:
-            img_np = np.stack([img_np, img_np, img_np], axis=-1)
-        elif img_np.ndim == 3 and img_np.shape[2] >= 3:
-            img_np = img_np[:, :, :3]
-        elif img_np.ndim == 3 and img_np.shape[0] >= 3:
-            img_np = np.moveaxis(img_np[:3, :, :], 0, -1)
-        else:
-            raise ValueError(f"Formato de imagen no soportado para inferencia: {img_np.shape}")
-
-        max_val = float(img_np.max()) if img_np.size else 0.0
-        if max_val > 1.0:
-            scale = 65535.0 if max_val > 255.0 else 255.0
-        else:
-            scale = 1.0
-
-        img_ch1 = img_np[:, :, 0].astype(np.float32) / scale
-        img_ch4 = img_np[:, :, 2].astype(np.float32) / scale
-
-        # Stacking: (H, W, 3) - repetir CH1 para RGB fake si es necesario, o usar directamente
-        # Asumo que el modelo espera RGB, así que replicamos CH1 y CH4
-        img_rgb = np.stack([img_ch1, img_ch4, img_ch1], axis=-1)  # (H, W, 3)
-
-        """
-
-        #ESTO YA SE HACE CON COUNT_CELLS DE FICRON
-        """
-        # Convertir a tensor
-        img_tensor = torch.from_numpy(img_rgb).permute(2, 0, 1).unsqueeze(0).float().to(ficron.device)
-
-        # Predicción parásitos (CH4)
-        with torch.no_grad():
-            pred_ch4 = ficron.model_p(img_tensor).squeeze().cpu().numpy()
-
-        # Predicción núcleos (CH1)
-        with torch.no_grad():
-            pred_ch1 = ficron.model_c(img_tensor).squeeze().cpu().numpy()
-        """
-
-# Llamar a count_cells de ficron.py para obtener las predicciones
+        # Llamar a count_cells de ficron.py para obtener las predicciones
         maps, resul_predict = ficron.count_cells(img_org=self.img_org_2ch, return_map=True)
         
         # maps = [mask_p, mask_c, mask_i]
         pred_ch1 = maps[1]  # mask_c (núcleos)
         pred_ch4 = maps[0]  # mask_p (parásitos)
         
-        return pred_ch1, pred_ch4
+        return pred_ch1, pred_ch4, maps
 
     def analizar_imagen_actual(self):
         # Detectar si estamos en modo multicanal (r*_CH*)
         if self.r_number is not None and (self.img_ch1 is not None or self.img_ch3 is not None):
             self._analizar_multicanal()
         elif self.img_org_2ch is not None:
-            # Modo tradicional
+            # Modo tradicional (toda la deteccion en la misma imagen)
             self._analizar_tradicional()
         else:
             self.state_process.setText("Primero carga una imagen.")
     
+    #Lo que realmente realiza el analisis total (detecciones y calculos)
     def _analizar_multicanal(self):
         """Analiza imágenes con patrón r*_CH* procesando CH1 y CH3 pero mostrando en la imagen cargada"""
         self.state_process.setText(f"Analizando {self.r_number}...")
@@ -351,6 +346,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         n_parasitos = 0
         pred_ch1 = None
         pred_ch3 = None
+        maps_ch1 = None
+        maps_ch3 = None
         coords_ch1 = np.empty((0, 2), dtype=float)
         coords_ch3 = np.empty((0, 2), dtype=float)
         
@@ -395,6 +392,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch3
         self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
+        if hasattr(self, 'checkShowCount'):
+            self.checkShowCount.setEnabled(True)
+            self.checkShowCount.setChecked(True)
+        self.channel_density_maps = {}
+        if maps_ch1 is not None:
+            self.channel_density_maps[1] = maps_ch1
+        if maps_ch3 is not None:
+            self.channel_density_maps[3] = maps_ch3
+        self.density_maps = self.channel_density_maps.get(self.current_display_channel)
         self.update_view()
         
         # Actualizar resultados
@@ -413,12 +419,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             f"Infectadas: {infectadas}, Sanas: {sanas}, Media: {media_parasitos:.2f}"
         )
     
+    #Esto es lo de todo en una imagen, no se deberia usar
     def _analizar_tradicional(self):
         """Análisis tradicional con imagen multicanal"""
         self.state_process.setText("Analizando...")
 
-        # 1) Predicciones (núcleos/ parásitos)
-        pred_ch1, pred_ch4 = self._infer_maps()
+        # 1) Predicciones y mapas de densidad (núcleos/ parásitos)
+        pred_ch1, pred_ch4, maps = self._infer_maps()
 
         # 2) Detección de núcleos (sale en formato (y, x))
         n_nucleos, centros_ch1_yx = c_util.detectar_parasitos_maxima_parametrizable(pred_ch1, sigma_suavizado=5, min_distance=21, percentil_fondo=20)
@@ -441,6 +448,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch4
         self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
+        if hasattr(self, 'checkShowCount'):
+            self.checkShowCount.setEnabled(True)
+            self.checkShowCount.setChecked(True)
+        self.channel_density_maps = {self.current_display_channel: maps}
+        self.density_maps = maps
         self.update_view()
 
         # Actualizar resultados
