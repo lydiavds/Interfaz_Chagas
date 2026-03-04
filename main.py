@@ -68,6 +68,48 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'btn_analizar'):
             self.btn_analizar.clicked.connect(self.analizar_imagen_actual)
 
+        self._update_count_button_state()
+
+    def _update_count_button_state(self):
+        has_image = self.img_org_2ch is not None
+        if hasattr(self, 'Button_try'):
+            self.Button_try.setEnabled(has_image)
+        self._update_image_controls_state(has_image)
+
+    def _update_image_controls_state(self, has_image):
+        if hasattr(self, 'checkCell'):
+            self.checkCell.setEnabled(has_image)
+        if hasattr(self, 'checkCH2'):
+            self.checkCH2.setEnabled(has_image)
+        if hasattr(self, 'checkDapi'):
+            self.checkDapi.setEnabled(has_image)
+        if hasattr(self, 'checkCH4'):
+            self.checkCH4.setEnabled(has_image)
+        if hasattr(self, 'checkBW'):
+            self.checkBW.setEnabled(has_image)
+
+        if not has_image:
+            if hasattr(self, 'checkShowCount'):
+                self.checkShowCount.setEnabled(False)
+                self.checkShowCount.setChecked(False)
+            if hasattr(self, 'checkView_maps'):
+                self.checkView_maps.setEnabled(False)
+                self.checkView_maps.setChecked(False)
+
+    def _clear_count_results(self):
+        if hasattr(self, 'res_par'):
+            self.res_par.setText("")
+        if hasattr(self, 'res_macrop'):
+            self.res_macrop.setText("")
+        if hasattr(self, 'res_inf'):
+            self.res_inf.setText("")
+        if hasattr(self, 'res_sanas'):
+            self.res_sanas.setText("")
+        if hasattr(self, 'res_media'):
+            self.res_media.setText("")
+        if hasattr(self, 'res_pct'):
+            self.res_pct.setText("")
+
 
     def set_view_image(self, img_npRGB):
         view_w = max(1, self.view_image.width())
@@ -79,10 +121,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         options = QFileDialog.Options()
         fileName, _ = QFileDialog.getOpenFileName(self, "Open Image", "Lote_final_procesado/", "Images (*.tif *.lif)",
                                                   options=options)
+        prev_r_number = self.r_number
         
         #Añadido para que cuando no se seleccione ninguna imagen, no se tome la imagen seleccionada como "", y simplemente cancele la seleccion
         if not fileName:
             self.state_process.setText('Selección cancelada.')  
+            self._update_count_button_state()
             return
 
         self.path_dir = os.path.dirname(fileName)
@@ -95,10 +139,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         # Detectar patrón r*_CH* (cualquier canal)
         pattern = re.match(r'(r\d+)_CH(\d+)', name_without_ext)
+        same_r = False
         
         if pattern:
             # Imagen con patrón detectado
-            self.r_number = pattern.group(1)
+            new_r_number = pattern.group(1)
+            same_r = (prev_r_number is not None and prev_r_number == new_r_number)
+            if prev_r_number is not None and prev_r_number != new_r_number:
+                self._clear_count_results()
+            self.r_number = new_r_number
             current_channel = int(pattern.group(2))
             self.current_filename = fileName
             
@@ -114,7 +163,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
             
             self.channel_images = {}
-            self.channel_density_maps = {}
+            if not same_r:
+                self.channel_density_maps = {}
             for channel_num in (1, 2, 3, 4):
                 channel_path = os.path.join(dir_path, f"{self.r_number}_CH{channel_num}.tif")
                 if os.path.exists(channel_path):
@@ -146,6 +196,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             )
         else:
             # Imagen sin patrón, cargar de forma tradicional (es decir, se hace toda la detección en la misma imagen)
+            if prev_r_number is not None:
+                self._clear_count_results()
             self.r_number = None
             self.img_ch1 = None
             self.img_ch3 = None
@@ -167,16 +219,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
             self.state_process.setText('Imagen cargada (modo tradicional)')
 
-        self.coords_nucleos = np.empty((0, 2), dtype=float)
-        self.coords_parasitos = np.empty((0, 2), dtype=float)
-        self.association_lines = []
+        if not same_r:
+            self.coords_nucleos = np.empty((0, 2), dtype=float)
+            self.coords_parasitos = np.empty((0, 2), dtype=float)
+            self.association_lines = []
 
-        if hasattr(self, 'checkShowCount'):
-            self.checkShowCount.setEnabled(False)
-            self.checkShowCount.setChecked(False)
-        
-        self.checkView_maps.setChecked(False)
-        self.density_maps = None
+            if hasattr(self, 'checkShowCount'):
+                self.checkShowCount.setEnabled(False)
+                self.checkShowCount.setChecked(False)
+            
+            self.checkView_maps.setChecked(False)
+            self.density_maps = None
+        self._update_count_button_state()
         self.update_view()
     
     def _load_single_image(self, filepath):
@@ -221,6 +275,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.img_org_rgb = img_tmp
             self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
             self.density_maps = self.channel_density_maps.get(self.current_display_channel)
+
+    def _update_density_map_toggle(self):
+        if not hasattr(self, 'checkView_maps'):
+            return
+        has_map = (self.img_org_2ch is not None) and (self.density_maps is not None)
+        self.checkView_maps.setEnabled(has_map)
+        if not has_map and self.checkView_maps.isChecked():
+            self.checkView_maps.setChecked(False)
 
     def _render_density_map(self, maps):
         if maps is None or self.img_org_rgb is None:
@@ -288,6 +350,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.current_display_channel = self._selected_channel_number()
         self._set_current_display_image()
+        self._update_density_map_toggle()
         channel = max(0, min(2, self.current_display_channel - 1))
 
         if self.checkView_maps.isChecked() and self.density_maps is not None:
