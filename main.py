@@ -36,6 +36,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.density_maps = None
         self.img_view = None
         self.path_dir = None
+        self.zoom_factor = 1.0
+        self.zoom_step = 0.25
+        self.zoom_min = 1.0
+        self.zoom_max = 3.0
         
         # Nuevas variables para manejo de canales separados
         self.img_ch1 = None  # Imagen del canal CH1 (núcleos)
@@ -68,7 +72,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'btn_analizar'):
             self.btn_analizar.clicked.connect(self.analizar_imagen_actual)
 
+        if hasattr(self, 'scrollAreaImage'):
+            viewport = self.scrollAreaImage.viewport()
+            viewport.installEventFilter(self)
+            viewport.grabGesture(QtCore.Qt.PinchGesture)
+            viewport.setAttribute(QtCore.Qt.WA_AcceptTouchEvents, True)
+
         self._update_count_button_state()
+        self._update_zoom_controls_state(False)
+        self._update_zoom_percent_label()
 
     def _update_count_button_state(self):
         has_image = self.img_org_2ch is not None
@@ -88,13 +100,27 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'checkBW'):
             self.checkBW.setEnabled(has_image)
 
+        self._update_zoom_controls_state(has_image)
+
         if not has_image:
+            self.zoom_factor = 1.0
+            self._update_zoom_percent_label()
             if hasattr(self, 'checkShowCount'):
                 self.checkShowCount.setEnabled(False)
                 self.checkShowCount.setChecked(False)
             if hasattr(self, 'checkView_maps'):
                 self.checkView_maps.setEnabled(False)
                 self.checkView_maps.setChecked(False)
+
+    def _update_zoom_controls_state(self, has_image):
+        if hasattr(self, 'btn_zoom_in'):
+            self.btn_zoom_in.setEnabled(has_image and self.zoom_factor < self.zoom_max)
+        if hasattr(self, 'btn_zoom_out'):
+            self.btn_zoom_out.setEnabled(has_image and self.zoom_factor > self.zoom_min)
+
+    def _update_zoom_percent_label(self):
+        if hasattr(self, 'zoom_percent'):
+            self.zoom_percent.setText(f"{int(round(self.zoom_factor * 100))}%")
 
     def _clear_count_results(self):
         if hasattr(self, 'res_par'):
@@ -112,10 +138,166 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
     def set_view_image(self, img_npRGB):
-        view_w = max(1, self.view_image.width())
-        view_h = max(1, self.view_image.height())
-        img_view = img_np2qt(img_npRGB).scaled(view_w, view_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        source_pixmap = img_np2qt(img_npRGB)
+
+        if hasattr(self, 'scrollAreaImage'):
+            viewport_size = self.scrollAreaImage.maximumViewportSize()
+            view_w = max(1, viewport_size.width())
+            view_h = max(1, viewport_size.height())
+        else:
+            view_w = max(1, self.view_image.maximumWidth())
+            view_h = max(1, self.view_image.maximumHeight())
+
+        base_fit = source_pixmap.scaled(view_w, view_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        zoom_w = max(1, int(base_fit.width() * self.zoom_factor))
+        zoom_h = max(1, int(base_fit.height() * self.zoom_factor))
+        img_view = base_fit.scaled(zoom_w, zoom_h, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation)
+        self.view_image.resize(img_view.size())
+        self.view_image.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.view_image.setPixmap(img_view)
+
+    #Para mantener el centro de la vista al hacer zoom
+    def _get_view_center_ratios(self):
+        if not hasattr(self, 'scrollAreaImage'):
+            return None
+        hbar = self.scrollAreaImage.horizontalScrollBar()
+        vbar = self.scrollAreaImage.verticalScrollBar()
+        viewport = self.scrollAreaImage.viewport()
+
+        img_w = max(1, self.view_image.width())
+        img_h = max(1, self.view_image.height())
+        center_x = hbar.value() + (viewport.width() / 2.0)
+        center_y = vbar.value() + (viewport.height() / 2.0)
+
+        ratio_x = max(0.0, min(1.0, center_x / img_w))
+        ratio_y = max(0.0, min(1.0, center_y / img_h))
+        return ratio_x, ratio_y
+
+    def _restore_view_center_ratios(self, center_ratios):
+        if center_ratios is None or not hasattr(self, 'scrollAreaImage'):
+            return
+
+        ratio_x, ratio_y = center_ratios
+        hbar = self.scrollAreaImage.horizontalScrollBar()
+        vbar = self.scrollAreaImage.verticalScrollBar()
+        viewport = self.scrollAreaImage.viewport()
+
+        target_x = int(round((ratio_x * self.view_image.width()) - (viewport.width() / 2.0)))
+        target_y = int(round((ratio_y * self.view_image.height()) - (viewport.height() / 2.0)))
+
+        target_x = max(hbar.minimum(), min(target_x, hbar.maximum()))
+        target_y = max(vbar.minimum(), min(target_y, vbar.maximum()))
+        hbar.setValue(target_x)
+        vbar.setValue(target_y)
+
+    def _get_view_anchor_ratios(self, anchor_pos=None):
+        if not hasattr(self, 'scrollAreaImage'):
+            return None
+        hbar = self.scrollAreaImage.horizontalScrollBar()
+        vbar = self.scrollAreaImage.verticalScrollBar()
+        viewport = self.scrollAreaImage.viewport()
+
+        if anchor_pos is None:
+            anchor_x = viewport.width() / 2.0
+            anchor_y = viewport.height() / 2.0
+        else:
+            anchor_x = float(anchor_pos.x())
+            anchor_y = float(anchor_pos.y())
+
+        img_w = max(1, self.view_image.width())
+        img_h = max(1, self.view_image.height())
+        content_x = hbar.value() + anchor_x
+        content_y = vbar.value() + anchor_y
+
+        ratio_x = max(0.0, min(1.0, content_x / img_w))
+        ratio_y = max(0.0, min(1.0, content_y / img_h))
+        return ratio_x, ratio_y
+
+    def _restore_view_anchor_ratios(self, anchor_ratios, anchor_pos=None):
+        if anchor_ratios is None or not hasattr(self, 'scrollAreaImage'):
+            return
+
+        ratio_x, ratio_y = anchor_ratios
+        hbar = self.scrollAreaImage.horizontalScrollBar()
+        vbar = self.scrollAreaImage.verticalScrollBar()
+        viewport = self.scrollAreaImage.viewport()
+
+        if anchor_pos is None:
+            anchor_x = viewport.width() / 2.0
+            anchor_y = viewport.height() / 2.0
+        else:
+            anchor_x = float(anchor_pos.x())
+            anchor_y = float(anchor_pos.y())
+
+        target_x = int(round((ratio_x * self.view_image.width()) - anchor_x))
+        target_y = int(round((ratio_y * self.view_image.height()) - anchor_y))
+
+        target_x = max(hbar.minimum(), min(target_x, hbar.maximum()))
+        target_y = max(vbar.minimum(), min(target_y, vbar.maximum()))
+        hbar.setValue(target_x)
+        vbar.setValue(target_y)
+
+    def _set_zoom_factor(self, new_zoom_factor, anchor_pos=None):
+        if self.img_org_2ch is None or self.img_view is None:
+            return
+
+        clamped_zoom = max(self.zoom_min, min(float(new_zoom_factor), self.zoom_max))
+        if abs(clamped_zoom - self.zoom_factor) < 1e-9:
+            self._update_zoom_controls_state(True)
+            return
+
+        anchor_ratios = self._get_view_anchor_ratios(anchor_pos)
+        self.zoom_factor = clamped_zoom
+        self._update_zoom_percent_label()
+        self._update_zoom_controls_state(True)
+        self.set_view_image(self.img_view)
+        self._restore_view_anchor_ratios(anchor_ratios, anchor_pos)
+
+    def _is_mouse_wheel_event(self, wheel_event):
+        if wheel_event.source() != QtCore.Qt.MouseEventNotSynthesized:
+            return False
+
+        if wheel_event.phase() != QtCore.Qt.NoScrollPhase:
+            return False
+
+        if not wheel_event.pixelDelta().isNull():
+            return False
+
+        return abs(wheel_event.angleDelta().y()) >= 120
+
+    def eventFilter(self, obj, event):
+        if hasattr(self, 'scrollAreaImage') and obj is self.scrollAreaImage.viewport() and self.img_org_2ch is not None:
+            if event.type() == QtCore.QEvent.Wheel and self._is_mouse_wheel_event(event):
+                delta_y = event.angleDelta().y()
+                if delta_y == 0:
+                    delta_y = event.pixelDelta().y()
+                if delta_y != 0:
+                    direction = 1 if delta_y > 0 else -1
+                    target_zoom = self.zoom_factor + (direction * self.zoom_step)
+                    self._set_zoom_factor(target_zoom, event.pos())
+                    return True
+
+            if event.type() == QtCore.QEvent.Gesture:
+                pinch = event.gesture(QtCore.Qt.PinchGesture)
+                if pinch is not None and (pinch.changeFlags() & QtWidgets.QPinchGesture.ScaleFactorChanged):
+                    scale_factor = pinch.scaleFactor()
+                    if scale_factor > 0:
+                        center_pos = pinch.centerPoint().toPoint()
+                        target_zoom = self.zoom_factor * float(scale_factor)
+                        self._set_zoom_factor(target_zoom, center_pos)
+                        return True
+
+        return super().eventFilter(obj, event)
+
+    def zoom_in(self):
+        if self.img_org_2ch is None:
+            return
+        self._set_zoom_factor(self.zoom_factor + self.zoom_step)
+
+    def zoom_out(self):
+        if self.img_org_2ch is None:
+            return
+        self._set_zoom_factor(self.zoom_factor - self.zoom_step)
 
     def open_imag(self):
         options = QFileDialog.Options()
@@ -131,6 +313,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.path_dir = os.path.dirname(fileName)
         self.text_path_dir.setText(fileName)
+        self.zoom_factor = 1.0
+        self._update_zoom_percent_label()
         
         # Extraer nombre del archivo sin extensión
         basename = os.path.basename(fileName)
@@ -231,6 +415,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.checkView_maps.setChecked(False)
             self.density_maps = None
         self._update_count_button_state()
+        self._update_zoom_controls_state(self.img_org_2ch is not None)
         self.update_view()
     
     def _load_single_image(self, filepath):
