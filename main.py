@@ -493,14 +493,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         draw = ImageDraw.Draw(img_pil)
 
         for x, y in self.coords_nucleos:
-            draw.ellipse((x - 2, y - 2, x + 2, y + 2), outline="red", width=1)
+            draw.ellipse((x - 5, y - 5, x + 5, y + 5), outline="white", width=1)
+            draw.ellipse((x - 4, y - 4, x + 4, y + 4), outline="black", width=4)
+            draw.ellipse((x - 4, y - 4, x + 4, y + 4), outline="red", width=3)
 
         for x, y in self.coords_parasitos:
-            draw.line((x - 3, y, x + 3, y), fill="yellow", width=1)
-            draw.line((x, y - 3, x, y + 3), fill="yellow", width=1)
+            draw.line((x - 6, y, x + 6, y), fill="black", width=3)
+            draw.line((x, y - 6, x, y + 6), fill="black", width=3)
+            draw.line((x - 6, y, x + 6, y), fill="yellow", width=2)
+            draw.line((x, y - 6, x, y + 6), fill="yellow", width=2)
 
         for x1, y1, x2, y2 in self.association_lines:
-            draw.line((x1, y1, x2, y2), fill="cyan", width=1)
+            draw.line((x1, y1, x2, y2), fill="black", width=3)
+            draw.line((x1, y1, x2, y2), fill="cyan", width=2)
 
         return np.array(img_pil)
 
