@@ -39,7 +39,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.zoom_factor = 1.0
         self.zoom_step = 0.25
         self.zoom_min = 1.0
-        self.zoom_max = 3.0
+        self.zoom_max = 20.0
         
         # Nuevas variables para manejo de canales separados
         self.img_ch1 = None  # Imagen del canal CH1 (núcleos)
@@ -148,10 +148,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             view_w = max(1, self.view_image.maximumWidth())
             view_h = max(1, self.view_image.maximumHeight())
 
-        base_fit = source_pixmap.scaled(view_w, view_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        zoom_w = max(1, int(base_fit.width() * self.zoom_factor))
-        zoom_h = max(1, int(base_fit.height() * self.zoom_factor))
-        img_view = base_fit.scaled(zoom_w, zoom_h, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation)
+        fit_scale = min(view_w / source_pixmap.width(), view_h / source_pixmap.height())
+        display_scale = max(0.01, fit_scale * self.zoom_factor)
+        zoom_w = max(1, int(round(source_pixmap.width() * display_scale)))
+        zoom_h = max(1, int(round(source_pixmap.height() * display_scale)))
+        transformation = (QtCore.Qt.SmoothTransformation
+                  if display_scale < 1.0
+                  else QtCore.Qt.FastTransformation)
+        img_view = source_pixmap.scaled(zoom_w, zoom_h, QtCore.Qt.KeepAspectRatio, transformation)
         self.view_image.resize(img_view.size())
         self.view_image.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.view_image.setPixmap(img_view)
@@ -301,7 +305,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def open_imag(self):
         options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open Image", "Lote_final_procesado/", "Images (*.tif *.lif)",
+        fileName, _ = QFileDialog.getOpenFileName(self, "Open Image", "Lote_final_procesado/", "Images (*.tif *.lif *.png *.jpg *.jpeg)",
                                                   options=options)
         prev_r_number = self.r_number
         
@@ -321,18 +325,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         name_without_ext = os.path.splitext(basename)[0]
         dir_path = os.path.dirname(fileName)
         
-        # Detectar patrón r*_CH* (cualquier canal)
-        pattern = re.match(r'(r\d+)_CH(\d+)', name_without_ext)
+        # Detectar cualquier nombre terminado en _CH1, _CH2, _CH3 o _CH4.
+        pattern = re.match(r'(?P<base>.+)_CH(?P<channel>[1-4])$', name_without_ext, re.IGNORECASE)
         same_r = False
         
         if pattern:
             # Imagen con patrón detectado
-            new_r_number = pattern.group(1)
+            new_r_number = pattern.group('base')
             same_r = (prev_r_number is not None and prev_r_number == new_r_number)
             if prev_r_number is not None and prev_r_number != new_r_number:
                 self._clear_count_results()
             self.r_number = new_r_number
-            current_channel = int(pattern.group(2))
+            current_channel = int(pattern.group('channel'))
             self.current_filename = fileName
             
             # Cargar la imagen actual (la que se mostró en el diálogo)
@@ -349,9 +353,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.channel_images = {}
             if not same_r:
                 self.channel_density_maps = {}
+            supported_extensions = {'.tif', '.tiff', '.lif', '.png', '.jpg', '.jpeg'}
             for channel_num in (1, 2, 3, 4):
-                channel_path = os.path.join(dir_path, f"{self.r_number}_CH{channel_num}.tif")
-                if os.path.exists(channel_path):
+                channel_stem = f"{self.r_number}_CH{channel_num}".casefold()
+                channel_path = next(
+                    (
+                        os.path.join(dir_path, filename)
+                        for filename in os.listdir(dir_path)
+                        if os.path.splitext(filename)[0].casefold() == channel_stem
+                        and os.path.splitext(filename)[1].casefold() in supported_extensions
+                    ),
+                    None
+                )
+                if channel_path is not None:
                     self.channel_images[channel_num] = self._load_single_image(channel_path)
 
             if current_channel not in self.channel_images:

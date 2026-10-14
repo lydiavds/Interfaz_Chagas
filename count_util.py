@@ -27,6 +27,9 @@ def read_tiff(path, size_img=None):
 
 
 def convert_uint8(img):
+    if img.dtype == np.uint8:
+        return img.copy()
+
     imin = img.min(axis=(0, 1))
     imax = img.max(axis=(0, 1))
 
