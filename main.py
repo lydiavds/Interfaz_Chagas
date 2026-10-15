@@ -1,5 +1,6 @@
 import count_util as c_util
 import ficron
+from teselado_reconstruccion_sin_solapar import tile_image, reconstruct_image
 import torch
 import traceback
 import re
@@ -49,6 +50,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.channel_images = {}  # {1: np.array, 2: np.array, 3: np.array, 4: np.array}
         self.channel_density_maps = {}  # {1: [mask_p, mask_c, mask_i], 3: [...]}
         self.current_display_channel = 1
+        self.count_mode_1 = False
+        self.count_mode_2 = False
 
         self.coords_nucleos = np.empty((0, 2), dtype=float)
         self.coords_parasitos = np.empty((0, 2), dtype=float)
@@ -546,7 +549,53 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
     def count_img(self):
+        if not self._choose_detection_mode():
+            return
+
+        selected_mode = 1 if self.count_mode_1 else 2
+        try:
+            ficron.set_detection_mode(selected_mode)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+            self.state_process.setText(f"No se pudo cargar el modo de conteo: {exc}")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error al cargar el modo de detección",
+                str(exc),
+            )
+            return
+
         self.analizar_imagen_actual()
+
+    #Boton para elegir el modo de detección (Conteo 1 o Conteo 2)
+    def _choose_detection_mode(self):
+        """Muestra el selector y activa exactamente uno de los flags de conteo."""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Elegir modo de detección")
+        dialog.setModal(True)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        description = QtWidgets.QLabel(
+            "Elegir modo de detección\n"
+            "Conteo 1: TFM Miguel\n"
+            "Conteo 2: TFG Lydia"
+        )
+        layout.addWidget(description)
+
+        buttons_layout = QtWidgets.QHBoxLayout()
+        count_1_button = QtWidgets.QPushButton("Conteo 1")
+        count_2_button = QtWidgets.QPushButton("Conteo 2")
+        buttons_layout.addWidget(count_1_button)
+        buttons_layout.addWidget(count_2_button)
+        layout.addLayout(buttons_layout)
+
+        def select_mode(mode):
+            self.count_mode_1 = mode == 1
+            self.count_mode_2 = mode == 2
+            dialog.accept()
+
+        count_1_button.clicked.connect(lambda: select_mode(1))
+        count_2_button.clicked.connect(lambda: select_mode(2))
+        return dialog.exec_() == QtWidgets.QDialog.Accepted
 
     def update_view(self, *args):
         if self.img_org_2ch is None:
@@ -585,73 +634,215 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         Devuelve predicciones usando los modelos cargados de ficron.
         """
 
-        # Llamar a count_cells de ficron.py para obtener las predicciones
-        maps, resul_predict = ficron.count_cells(img_org=self.img_org_2ch, return_map=True)
-        
-        # maps = [mask_p, mask_c, mask_i]
+        #maps, resul_predict = self._infer_maps_for_image(self.img_org_2ch)
+        maps_list = self._infer_maps_for_image(self.img_org_2ch, [self.img_org_2ch])
+        maps = maps_list[0]
         pred_ch1 = maps[1]  # mask_c (núcleos)
         pred_ch4 = maps[0]  # mask_p (parásitos)
         
         return pred_ch1, pred_ch4, maps
 
-    def analizar_imagen_actual(self):
-        # Detectar si estamos en modo multicanal (r*_CH*)
-        if self.r_number is not None and (self.img_ch1 is not None or self.img_ch3 is not None):
-            self._analizar_multicanal()
-        elif self.img_org_2ch is not None:
-            # Modo tradicional (toda la deteccion en la misma imagen)
-            self._analizar_tradicional()
-        else:
-            self.state_process.setText("Primero carga una imagen.")
+    #USADO POR TFM, CONTEO DE 1 CANAL PARA HACER POR SEPARADO NUCLEOS Y PARASITOS
+    def _infer_maps_for_image(self, image, teselas_img=None, channel=None):
+
+        """Obtiene los mapas de densidad de todas las teselas de un canal."""
+
+        if image is None:
+            return []
+        if teselas_img is None:
+            teselas_img = [image]
+
+        tile_maps = ficron.count_cells_batch(teselas_img, channel=channel)
+
+        return tile_maps
+
+    @staticmethod
+    def _tile_origin(tile_index, metadata, image):
+        """Devuelve el desplazamiento de una tesela respecto a la imagen original."""
+        if metadata is not None:
+            _, tile_w = metadata["tile_shape"]
+            _, n_tiles_x = metadata["grid_shape"]
+            row, column = divmod(tile_index, n_tiles_x)
+            return column * tile_w, row * metadata["tile_shape"][0]
+
+        height, width = image.shape[:2]
+        pad_h = max(0, 1024 - height)
+        pad_w = max(0, 1024 - width)
+        return -(pad_w // 2), -(pad_h // 2)
+
     
     #Lo que realmente realiza el analisis total (detecciones y calculos)
     def _analizar_multicanal(self):
         """Analiza imágenes con patrón r*_CH* procesando CH1 y CH3 pero mostrando en la imagen cargada"""
         self.state_process.setText(f"Analizando {self.r_number}...")
         
+        #nucleos y parasitos de la img total
         n_nucleos = 0
         n_parasitos = 0
+
+        #Predicciones de cada canal img total
         pred_ch1 = None
         pred_ch3 = None
+
+        #Mapas de la imagen total
         maps_ch1 = None
         maps_ch3 = None
+
+        #Coords de la imagen total
         coords_ch1 = np.empty((0, 2), dtype=float)
         coords_ch3 = np.empty((0, 2), dtype=float)
+
+        #PRIMERO SE COMPRUEBA SI HAY QUE HACER TESELADO O NO (SI TAMAÑO ES MAYOR QUE 1024x1024) 
+        #Si hay que teselar hay que hacerlo sobre canal ch1 y ch3
+
+        #Lista de teselas de cada canal
+        teselas_ch1 = []
+        teselas_ch3 = []
+        metadatos_ch1 = None
+        metadatos_ch3 = None
+
+        #TESELADO CH1 SI ES NECESARIO
+        #teselado ch1 si dimensiones son mayores que 1024x1024
+        if self.img_ch1 is not None and (self.img_ch1.shape[0] > 1024 or self.img_ch1.shape[1] > 1024):
+            self.state_process.setText(f"Teselando CH1 para {self.r_number}...")
+            teselas_ch1, metadatos_ch1 = tile_image(self.img_ch1)
+
+        #Si son menores que 1024x1024 se añade padding hasta que sea 1024x1024 y se añade a la lista de teselas
+        elif self.img_ch1 is not None and (self.img_ch1.shape[0] < 1024 or self.img_ch1.shape[1] < 1024):
+            teselas_ch1 = [c_util.add_padding(self.img_ch1, target_size=(1024, 1024))]
+
+        #Si uma imagen es exactamente 1024x1024, se añade a la lista de teselas tal cual
+        else:
+            teselas_ch1 = [self.img_ch1] if self.img_ch1 is not None else [] #La lista de teselas sera la unica imagen
         
-        # Procesar CH1 (núcleos) si está disponible
-        if self.img_ch1 is not None:
-            maps_ch1, _ = ficron.count_cells(img_org=self.img_ch1, channel=0, return_map=True)
-            pred_ch1 = maps_ch1[1]  # mask_c (núcleos)
-            n_nucleos, centros_ch1_yx = c_util.detectar_parasitos_maxima_parametrizable(
-                pred_ch1, sigma_suavizado=5, min_distance=21, percentil_fondo=20
+
+
+
+        #TESELADO CH3 SI ES NECESARIO
+        #teselado ch3 si dimensiones son mayores que 1024x1024
+        if self.img_ch3 is not None and (self.img_ch3.shape[0] > 1024 or self.img_ch3.shape[1] > 1024):
+            self.state_process.setText(f"Teselando CH3 para {self.r_number}...")
+            teselas_ch3, metadatos_ch3 = tile_image(self.img_ch3)
+
+        #Si son menores que 1024x1024 se añade padding hasta que sea 1024x1024 y se añade a la lista de teselas
+        elif self.img_ch3 is not None and (self.img_ch3.shape[0] < 1024 or self.img_ch3.shape[1] < 1024):
+            teselas_ch3 = [c_util.add_padding(self.img_ch3, target_size=(1024, 1024))]
+
+        #Si uma imagen es exactamente 1024x1024, se añade a la lista de teselas tal cual
+        else:
+            teselas_ch3 = [self.img_ch3] if self.img_ch3 is not None else [] #La lista de teselas sera la unica imagen
+        
+        
+
+        #Por cada tesela de ch1 y ch3, se hace la prediccion y se obtiene el mapa de densidad
+
+        #Listas de predicciones y mapas de densidad para cada tesela
+        pred_ch1_list = []
+        pred_ch3_list = []
+        maps_ch1_list = []
+        maps_ch3_list = []
+
+        #Las listas de coordenadas de cada tesela (pos 0 seran todas las coordenadas de tesela 0 etc)
+        coords_ch1_teselas = []
+        coords_ch3_teselas = []
+
+        # Primero nucleos 
+        maps_ch1_list = self._infer_maps_for_image(
+            self.img_ch1,
+            teselas_ch1,
+            channel=0,
+        )
+
+        # Después se procesan las coordenadas de cada mapa de CH1.
+        for i, tile_ch1 in enumerate(teselas_ch1):
+            # Procesar CH1 (núcleos) si está disponible
+            if tile_ch1 is not None:
+                pred_ch1_list.append(maps_ch1_list[i][1])  # mask_c es [1](núcleos)
+                nucleos_tesela, centros_ch1_yx_tesela = c_util.detectar_parasitos_maxima_parametrizable(
+                    pred_ch1_list[-1], sigma_suavizado=5, min_distance=21, percentil_fondo=20
+                )
+                n_nucleos += nucleos_tesela
+                coords_ch1_teselas.append(
+                    np.asarray(
+                        [(float(x), float(y)) for (y, x) in centros_ch1_yx_tesela],
+                        dtype=float,
+                    ).reshape(-1, 2)
+                )
+                origin_x, origin_y = self._tile_origin(
+                    i, metadatos_ch1, self.img_ch1
+                )
+                coords_ch1_teselas[-1] += (origin_x, origin_y)
+            else:
+                self.state_process.setText(f"Advertencia: No se encontró CH1 para {self.r_number}")
+        
+
+
+        # Segundo parasitos
+        maps_ch3_list = self._infer_maps_for_image(
+            self.img_ch3,
+            teselas_ch3,
+            channel=2,
+        )
+
+        # Después se procesan las coordenadas de cada mapa de CH3.
+        for i, tile_ch3 in enumerate(teselas_ch3):
+            # Procesar CH3 (parásitos) si está disponible
+            if tile_ch3 is not None:
+                pred_ch3_list.append(maps_ch3_list[i][0])  # mask_p (parásitos)
+            else:
+                self.state_process.setText(f"Advertencia: No se encontró CH3 para {self.r_number}")
+
+
+        #VOLVER A RECONSTRUIR IMG SI ES NECESARIO
+        if teselas_ch1 and len(teselas_ch1) > 1:
+            # Reconstruir mapa de densidad de núcleos a partir de teselas
+            maps_ch1 = [
+                reconstruct_image(
+                    [tile_maps[index] for tile_maps in maps_ch1_list],
+                    metadatos_ch1,
+                )
+                for index in range(3)
+            ]
+        elif maps_ch1_list:
+            maps_ch1 = maps_ch1_list[0]
+        if teselas_ch3 and len(teselas_ch3) > 1:
+            # Reconstruir mapa de densidad de parásitos a partir de teselas
+            maps_ch3 = [
+                reconstruct_image(
+                    [tile_maps[index] for tile_maps in maps_ch3_list],
+                    metadatos_ch3,
+                )
+                for index in range(3)
+            ]
+        elif maps_ch3_list:
+            maps_ch3 = maps_ch3_list[0]
+
+        # Contar una vez sobre el mapa completo para aplicar un umbral global.
+        if maps_ch3 is not None and self.img_ch3 is not None:
+            n_parasitos, centros_ch3_xy = c_util.contar_parasitos_dbscan(
+                self.img_ch3,
+                maps_ch3[0],
             )
-            coords_ch1 = np.array([(float(x), float(y)) for (y, x) in centros_ch1_yx], dtype=float)
-        else:
-            self.state_process.setText(f"Advertencia: No se encontró CH1 para {self.r_number}")
+            coords_ch3_teselas = [
+                np.asarray(centros_ch3_xy, dtype=float).reshape(-1, 2)
+            ]
         
-        # Procesar CH3 (parásitos) si está disponible
-        if self.img_ch3 is not None:
-            maps_ch3, _ = ficron.count_cells(img_org=self.img_ch3, channel=2, return_map=True)
-            pred_ch3 = maps_ch3[0]  # mask_p (parásitos)
-            
-            # Preparar para detección de parásitos
-            img_ch3_tmp = c_util.convert_uint8(self.img_ch3)
-            img_ch3_rgb = [c_util.convert_gray2bgr(img_ch3_tmp[:, :, i]) for i in range(3)]
-            
-            n_parasitos, centros_ch3_xy = c_util.contar_parasitos_dbscan(img_ch3_rgb[2], pred_ch3)
-            coords_ch3 = np.array(centros_ch3_xy, dtype=float) if len(centros_ch3_xy) else np.empty((0, 2), dtype=float)
-        else:
-            self.state_process.setText(f"Advertencia: No se encontró CH3 para {self.r_number}")
-        
+       
+       
+       
         # Calcular células infectadas y visualizar en la imagen cargada (img_org_rgb)
         infectadas = 0
         sanas = n_nucleos
         media_parasitos = 0.0
         pct_infectadas = 0.0
         asociaciones = {}
+
+        #se ponen como coords_ch1 y coords_ch3 las coordenadas de todas las teselas juntas
+        coords_ch1 = np.vstack(coords_ch1_teselas) if coords_ch1_teselas else np.empty((0, 2), dtype=float)
+        coords_ch3 = np.vstack(coords_ch3_teselas) if coords_ch3_teselas else np.empty((0, 2), dtype=float)
         
         # Asociación parásito -> núcleo si tenemos ambos
-        if len(coords_ch1) > 0 and len(coords_ch3) > 0:
+        if len(coords_ch1_teselas) > 0 and len(coords_ch3_teselas) > 0:
             draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
             asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch3, draw_aux)
             infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_ch1))
@@ -737,6 +928,24 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             f"Listo | Núcleos: {n_nucleos}, Parásitos: {n_parasitos}, "
             f"Infectadas: {infectadas}, Sanas: {sanas}, Media: {media_parasitos:.2f}"
         )
+
+
+
+
+    #El propio analisis 
+    #Será el pipeline 
+    def analizar_imagen_actual(self):
+
+        #Primero se detecta si se esta en deteccion 1 o 2 (tfm o tfg)
+        
+        # Detectar si estamos en modo multicanal (r*_CH*)
+        if self.r_number is not None and (self.img_ch1 is not None or self.img_ch3 is not None):
+            self._analizar_multicanal()
+        elif self.img_org_2ch is not None:
+            # Modo tradicional (toda la deteccion en la misma imagen)
+            self._analizar_tradicional()
+        else:
+            self.state_process.setText("Primero carga una imagen.")
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])

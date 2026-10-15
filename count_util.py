@@ -8,6 +8,7 @@ from skimage.feature import peak_local_max
 from collections import defaultdict
 
 
+
 def read_tiff(path, size_img=None):
     """
     path - Path to the multipage-tiff file
@@ -61,12 +62,35 @@ def merge_img_map(img_org, maps):
     return merge_img
 
 
+def add_padding(img_org, target_size=(1024,1024)):
+    """
+    Añade padding a la imagen original para que tenga el tamaño objetivo minimo de 1024x1024.
+    """
+    h, w = img_org.shape[:2]
+    target_h, target_w = target_size
+
+    pad_h = max(0, target_h - h)
+    pad_w = max(0, target_w - w)
+
+    pad_top = pad_h // 2
+    pad_bottom = pad_h - pad_top
+    pad_left = pad_w // 2
+    pad_right = pad_w - pad_left
+
+    if img_org.ndim == 2:
+        padded_img = np.pad(img_org, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant', constant_values=0)
+    else:
+        padded_img = np.pad(img_org, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
+
+    return padded_img
+
+
 
 
 
 #A PARTIR DE AQUI SE VAN A AÑADIR LAS FUNCIONES DE CONTABILIZACIÓN DE PARÁSITOS ETC QUE SE TIENEN DEL CÓDIGO DEL TFM
 
-#PARÁSITOS
+#PARÁSITOS TFM
 
 def contar_parasitos_dbscan(img_original, density_map, threshold_rel=0.35, eps=2, min_samples=2):
     density_map = (density_map - density_map.min()) / (density_map.max() - density_map.min())
@@ -80,7 +104,15 @@ def contar_parasitos_dbscan(img_original, density_map, threshold_rel=0.35, eps=2
     return len(centros), centros
 
 
-#NÚCLEOS CELULARES
+#PARÁSITOS TFG
+def contar_parasitos_tfg(density_map):
+    threshold = max(0.1, density_map.max() * 0.3) #threshold adaptativo
+    parasitos_detectados = peak_local_max(density_map, min_distance=5, threshold_abs=threshold)
+
+    return len(parasitos_detectados), parasitos_detectados #Con parasitos_detectados siendo pd[0]=y, pd[1]=x
+
+
+#NÚCLEOS CELULARES TFM
 
 def detectar_parasitos_maxima_parametrizable(pred, sigma_suavizado=3, min_distance=30, percentil_fondo=80):
     smoothed = gaussian_filter(pred, sigma=sigma_suavizado)
@@ -94,6 +126,48 @@ def detectar_parasitos_maxima_parametrizable(pred, sigma_suavizado=3, min_distan
         vecindario = smoothed[max(y-3,0):y+4, max(x-3,0):x+4]
         val_medio_around = np.mean(np.delete(vecindario.flatten(), vecindario.size // 2))
         if val_centro > background_threshold and val_centro - val_medio_around > 0.05:
+            filtered_coords.append((y, x))
+
+    return len(filtered_coords), filtered_coords
+
+
+
+#NÚCLEOS CELULARES TFG
+
+#Igual que TFM pero radio del vecindario depende del sigma y tiene threshold absoluto para descartar picos muy bajos
+def detectar_nucleos_maxima_parametrizable_tfg(pred, sigma_suavizado=2, min_distance=40, percentil_fondo=30, diferencia_minima=0.001):
+    # 1. Suavizado gaussiano
+    smoothed = gaussian_filter(pred, sigma=sigma_suavizado)
+
+    # 2. Búsqueda de picos SIN descartar los márgenes de las teselas
+    coordinates = peak_local_max(
+        smoothed,
+        threshold_abs=0.5,
+        min_distance=min_distance,
+        exclude_border=False  #No ignora los bordes
+    )
+
+    background_threshold = np.percentile(smoothed, percentil_fondo)
+
+    # 3. Adaptar el radio del vecindario según el sigma (ej. sigma 15 -> radio 7)
+    radio_vecindario = max(3, int(sigma_suavizado / 2))
+
+    filtered_coords = []
+    for y, x in coordinates:
+        val_centro = smoothed[y, x]
+
+        y_min, y_max = max(y - radio_vecindario, 0), min(y + radio_vecindario + 1, smoothed.shape[0])
+        x_min, x_max = max(x - radio_vecindario, 0), min(x + radio_vecindario + 1, smoothed.shape[1])
+
+        vecindario = smoothed[y_min:y_max, x_min:x_max]
+
+        if vecindario.size > 1:
+            val_medio_around = np.mean(np.delete(vecindario.flatten(), vecindario.size // 2))
+        else:
+            val_medio_around = 0
+
+        # Validación del pico
+        if val_centro > background_threshold and (val_centro - val_medio_around) >= diferencia_minima:
             filtered_coords.append((y, x))
 
     return len(filtered_coords), filtered_coords

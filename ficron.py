@@ -3,6 +3,9 @@ import torch
 import cv2
 from pytorch_models import UNet
 
+from skimage.feature import peak_local_max
+from scipy.ndimage import gaussian_filter
+
 #Basicamente, ignorar un poco lo que ya esta aqui, y obretodo usar el que esta en el codigo de la fase3
 
 # Configurar dispositivo (GPU si está disponible, sino CPU)
@@ -69,6 +72,7 @@ def count_cells(img_org, return_map=False):
 
 
 #Solo se va a procesar una img a la vez, como en ficron
+#Conteo de celulas y parasitos, con mapas de densidad del TFM de Miguel
 def count_cells(img_org, channel=None, return_map=False):
     """
     Procesa la imagen y realiza predicciones según el canal especificado.
@@ -106,16 +110,19 @@ def count_cells(img_org, channel=None, return_map=False):
     if channel is not None and channel not in [0, 2]:
         raise ValueError("channel debe ser 0, 2 o None")
 
+    selected_model_p = model_p
+    selected_model_c = model_c
+
     # Predicción según el canal (parásitos o núcleos)
     if channel is None or channel == 2:
         # Canal CH3 (parásitos)
         with torch.no_grad():
-            mask_p = model_p(img_tensor).squeeze().detach().cpu().numpy()
+            mask_p = selected_model_p(img_tensor).squeeze().detach().cpu().numpy()
     
     if channel is None or channel == 0:
         # Canal CH1 (núcleos)
         with torch.no_grad():
-            mask_c = model_c(img_tensor).squeeze().detach().cpu().numpy()
+            mask_c = selected_model_c(img_tensor).squeeze().detach().cpu().numpy()
 
     # Crear máscaras vacías para los canales no procesados
     if mask_p is None:
@@ -138,6 +145,121 @@ def count_cells(img_org, channel=None, return_map=False):
 
     return resul_predict
 
+
+def count_cells_batch(tiles, channel=None, batch_size=2):
+    """Ejecuta count_cells por lotes y devuelve un mapa por cada tesela."""
+    if channel is not None and channel not in [0, 2]:
+        raise ValueError("channel debe ser 0, 2 o None")
+    if batch_size < 1:
+        raise ValueError("batch_size debe ser mayor que cero")
+
+    maps = []
+    for start in range(0, len(tiles), batch_size):
+        batch_tiles = [np.asarray(tile) for tile in tiles[start:start + batch_size]]
+        batch = np.stack([
+            tile if tile.ndim == 3 else np.repeat(tile[..., np.newaxis], 3, axis=2)
+            for tile in batch_tiles
+        ])
+        batch_tensor = torch.from_numpy(batch).permute(0, 3, 1, 2).float().to(device)
+
+        with torch.no_grad():
+            predictions_p = (
+                model_p(batch_tensor).detach().cpu().numpy()
+                if channel in (None, 2) else None
+            )
+            predictions_c = (
+                model_c(batch_tensor).detach().cpu().numpy()
+                if channel in (None, 0) else None
+            )
+
+        for index in range(len(batch_tiles)):
+            prediction_p = (
+                np.squeeze(predictions_p[index])
+                if predictions_p is not None else None
+            )
+            prediction_c = (
+                np.squeeze(predictions_c[index])
+                if predictions_c is not None else None
+            )
+            shape = prediction_p.shape if prediction_p is not None else prediction_c.shape
+            empty = np.zeros(shape, dtype=np.float32)
+            maps.append(
+                [
+                    prediction_p if prediction_p is not None else empty,
+                    prediction_c if prediction_c is not None else empty,
+                    empty.copy(),
+                ]
+            )
+
+    return maps
+
+
+
+
+
+#Esta funcion va a hacer a prediccion sobre todas las teselas
+#Todas las teselas deberian formar la imagen original completa. Si no se ha teselado porque
+#img original ya era de 1024x1024, entonces solo habra una 'tesela'
+
+#A diferencia de count_cells, esta funcion no se llamara dos veces (una para parasitos y otra para nucleos), sino que va a hacer primero la prediccion de parasitos sobre todas las teselas, y despues lo mismo pero con nucleos
+
+#Va a realizar primero la prediccion de parasitos sobre todas las teselas, y despues lo mismo pero con nucleos
+def predicciones_tfg(teselas):
+
+    #mapas de densidad predichos de las teselas
+    teselas_pred_parasitos = []
+    teselas_pred_nucleos = []
+
+
+    #Modelo de los parasitos (model_p) que se asume ya cargado
+    model_p.eval()
+
+    with torch.no_grad():
+        for tile in teselas:
+            # Convertir a Tensor PyTorch: (H, W, C) -> (1, C, H, W)
+            tensor_tile = torch.from_numpy(tile).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            tensor_tile = tensor_tile.to(device)
+
+            # Inferencia
+            pred_tile = model_p(tensor_tile)
+
+            # Guardar resultado como numpy array 2D
+            pred_np = pred_tile.squeeze().cpu().numpy()
+            teselas_pred_parasitos.append(pred_np)  #Se guardan predicciones
+
+
+    #Modelo de los nucleos celulares (model_c) que se asume ya cargado
+    model_c.eval()
+
+    with torch.no_grad():
+        for tile in teselas:
+            # Convertir a Tensor PyTorch: (H, W, C) -> (1, C, H, W)
+            tensor_tile = torch.from_numpy(tile).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            tensor_tile = tensor_tile.to(device)
+
+            # Inferencia
+            pred_tile = model_c(tensor_tile)
+
+            # Guardar resultado como numpy array 2D
+            pred_np = pred_tile.squeeze().cpu().numpy()
+            teselas_pred_nucleos.append(pred_np)  #Se guardan predicciones
+
+
+    return teselas_pred_parasitos, teselas_pred_nucleos #Se devuelven en este caso los dos tipos de mapas de densidad redichos para cada cosa
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #Para cargar el modelo pytorch
 def load_model(path, model_class):
     """
@@ -158,15 +280,65 @@ def load_model(path, model_class):
     return model
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #La fase 3 no tiene modelo propio, si no que asigna los parasitos encontrados en la fase 1 con las celulas de la fase 2
 
-# Rutas de los modelos PyTorch
-path_model_p = 'Models/fase1_modelo8.pth' 
-path_model_cel = 'Models/fase2_modelo2.pth'
+# Rutas de los modelos PyTorch de Miguel (TFM)
+path_model_p = 'Models/TFM_Miguel/fase1_modelo8.pth' 
+path_model_cel = 'Models/TFM_Miguel/fase2_modelo2.pth'
+
+# Rutas de los modelos PyTorch de mi TFG
+path_model_p_tfg = 'Models/TFG_Lydia/Parasitos.pth'
+path_model_cel_tfg = 'Models/TFG_Lydia/nucleos2.pth'
 
 
 # Cargar modelos PyTorch
 # NOTA: Ajusta las clases de modelos según la arquitectura de cada uno
+
+#Modelos utilizados por TFM (trabajo anterior)
 model_p = load_model(path_model_p, model_class=UNet)
 model_c = load_model(path_model_cel, model_class=UNet)
 
+#Modelos usados en mi TFG
+#model_p_tfg = None
+#model_cel_tfg = None
+_detection_mode = 1
+
+
+def set_detection_mode(mode):
+    """Selecciona los modelos que se utilizaran en el siguiente conteo."""
+    global _detection_mode, model_p, model_c
+
+    #Si el error no es ni 1 ni 2
+    if mode not in (1, 2):
+        raise ValueError("mode debe ser 1 o 2")
+
+    #Modelos del TFM de MIguel
+    if mode == 1:
+        print("Usando modelos de TFM (fase 1 y fase 2)")
+        # Cargar modelos de TFM
+        model_p = load_model(path_model_p, model_class=UNet)        
+        model_c = load_model(path_model_cel, model_class=UNet)
+
+    #Mis modelos del TFG
+    elif mode == 2:
+        model_p = load_model(path_model_p_tfg, model_class=UNet_Parasitos)
+        model_c = load_model(path_model_cel_tfg, model_class=UNet)
+
+    _detection_mode = mode
