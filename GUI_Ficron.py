@@ -14,7 +14,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1013, 795)
+        MainWindow.resize(1275, 795)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.scrollAreaImage = QtWidgets.QScrollArea(self.centralwidget)
@@ -163,14 +163,21 @@ class Ui_MainWindow(object):
         self.legend_label = QtWidgets.QLabel(self.layoutWidget)
         self.legend_label.setText(
             "<html><head/><body>"
-            "<p style='margin: 0px; line-height: 20px;'>"
-            "<span style='background-color: rgb(255, 0, 0); border: 1px solid black; padding: 2px 6px;'>&nbsp;</span>"
-            " Células &nbsp;&nbsp;&nbsp; "
-            "<span style='background-color: rgb(255, 255, 0); border: 1px solid black; padding: 2px 6px;'>&nbsp;</span>"
-            " Parásitos &nbsp;&nbsp;&nbsp; "
-            "<span style='background-color: rgb(0, 255, 255); border: 1px solid black; padding: 2px 6px;'>&nbsp;</span>"
-            " Asociación"
-            "</p></body></html>"
+            "<p style='margin: 0px;'><b>Células</b></p>"
+            "<table cellspacing='8' cellpadding='0'>"
+            "<tr>"
+            "<td bgcolor='#ff0000' width='20' height='16'>&nbsp;</td><td>Sanas</td>"
+            "<td bgcolor='#ffa500' width='20' height='16'>&nbsp;</td><td>1-15</td>"
+            "<td bgcolor='#ff0099' width='20' height='16'>&nbsp;</td><td>16-50</td>"
+            "<td bgcolor='#008000' width='20' height='16'>&nbsp;</td><td>&gt;50</td>"
+            "</tr></table>"
+            "<p style='margin: 8px 0px 0px 0px;'><b>Otras detecciones</b></p>"
+            "<table cellspacing='8' cellpadding='0'>"
+            "<tr>"
+            "<td bgcolor='#ffff00' width='20' height='16'>&nbsp;</td><td>Parásitos</td>"
+            "<td bgcolor='#00ffff' width='20' height='16'>&nbsp;</td><td>Asociaciones</td>"
+            "</tr></table>"
+            "</body></html>"
         )
         self.legend_label.setObjectName("legend_label")
         self.formLayout.setWidget(10, QtWidgets.QFormLayout.SpanningRole, self.legend_label)
@@ -240,9 +247,69 @@ class Ui_MainWindow(object):
         self.res_macrop.setText("")
         self.res_macrop.setObjectName("res_macrop")
         self.formLayout.setWidget(2, QtWidgets.QFormLayout.FieldRole, self.res_macrop)
+        self.carga_parasitaria = QtWidgets.QGroupBox(self.centralwidget)
+        self.carga_parasitaria.setGeometry(QtCore.QRect(1020, 70, 245, 500))
+        self.carga_parasitaria.setObjectName("carga_parasitaria")
+        self.carga_parasitaria_layout = QtWidgets.QFormLayout(self.carga_parasitaria)
+        self.carga_parasitaria_layout.setContentsMargins(10, 20, 10, 10)
+        self.carga_1_15_label = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_1_15_label.setText("<html><head/><body><p><span style=\" font-weight:600;\">1-15 parásitos:</span></p></body></html>")
+        self.carga_1_15_label.setObjectName("carga_1_15_label")
+        self.carga_parasitaria_layout.setWidget(
+            0, QtWidgets.QFormLayout.LabelRole, self.carga_1_15_label
+        )
+        self.carga_1_15 = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_1_15.setStyleSheet("background-color: rgb(255, 255, 255);\n"
+"color: rgb(0, 0, 0)")
+        self.carga_1_15.setAlignment(QtCore.Qt.AlignCenter)
+        self.carga_1_15.setObjectName("carga_1_15")
+        self.carga_parasitaria_layout.setWidget(
+            0, QtWidgets.QFormLayout.FieldRole, self.carga_1_15
+        )
+        self.carga_16_50_label = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_16_50_label.setText("<html><head/><body><p><span style=\" font-weight:600;\">16-50 parásitos:</span></p></body></html>")
+        self.carga_16_50_label.setObjectName("carga_16_50_label")
+        self.carga_parasitaria_layout.setWidget(
+            1, QtWidgets.QFormLayout.LabelRole, self.carga_16_50_label
+        )
+        self.carga_16_50 = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_16_50.setStyleSheet("background-color: rgb(255, 255, 255);\n"
+"color: rgb(0, 0, 0)")
+        self.carga_16_50.setAlignment(QtCore.Qt.AlignCenter)
+        self.carga_16_50.setObjectName("carga_16_50")
+        self.carga_parasitaria_layout.setWidget(
+            1, QtWidgets.QFormLayout.FieldRole, self.carga_16_50
+        )
+        self.carga_mas_50_label = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_mas_50_label.setText("<html><head/><body><p><span style=\" font-weight:600;\">>50 parásitos:</span></p></body></html>")
+        self.carga_mas_50_label.setObjectName("carga_mas_50_label")
+        self.carga_parasitaria_layout.setWidget(
+            2, QtWidgets.QFormLayout.LabelRole, self.carga_mas_50_label
+        )
+        self.carga_mas_50 = QtWidgets.QLabel(self.carga_parasitaria)
+        self.carga_mas_50.setStyleSheet("background-color: rgb(255, 255, 255);\n"
+"color: rgb(0, 0, 0)")
+        self.carga_mas_50.setAlignment(QtCore.Qt.AlignCenter)
+        self.carga_mas_50.setObjectName("carga_mas_50")
+        self.carga_parasitaria_layout.setWidget(
+            2, QtWidgets.QFormLayout.FieldRole, self.carga_mas_50
+        )
+        spacer_informe = QtWidgets.QSpacerItem(
+            20, 12, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
+        )
+        self.carga_parasitaria_layout.setItem(
+            3, QtWidgets.QFormLayout.SpanningRole, spacer_informe
+        )
+        self.informe_1_15 = QtWidgets.QGroupBox(self.carga_parasitaria)
+        self.informe_1_15.setObjectName("informe_1_15")
+        self.informe_1_15_layout = QtWidgets.QVBoxLayout(self.informe_1_15)
+        self.informe_1_15_layout.setContentsMargins(8, 8, 8, 8)
+        self.carga_parasitaria_layout.setWidget(
+            4, QtWidgets.QFormLayout.SpanningRole, self.informe_1_15
+        )
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 1013, 22))
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1275, 22))
         self.menubar.setLocale(QtCore.QLocale(QtCore.QLocale.English, QtCore.QLocale.UnitedStates))
         self.menubar.setObjectName("menubar")
         self.menuFile = QtWidgets.QMenu(self.menubar)
@@ -296,4 +363,6 @@ class Ui_MainWindow(object):
         self.btn_zoom_out.setText(_translate("MainWindow", "-"))
         self.btn_zoom_in.setText(_translate("MainWindow", "+"))
         self.label_10.setText(_translate("MainWindow", "Directorio:"))
+        self.carga_parasitaria.setTitle(_translate("MainWindow", "Carga parasitaria"))
+        self.informe_1_15.setTitle(_translate("MainWindow", "Informe 1-15 parásitos"))
         self.menuFile.setTitle(_translate("MainWindow", "Archivos"))

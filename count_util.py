@@ -178,6 +178,8 @@ def detectar_nucleos_maxima_parametrizable_tfg(pred, sigma_suavizado=2, min_dist
 #Esta es la asignación que se acaba usando, ya que proporiciona mejores resultados (mejores que usando solo la distancia minima)
 def asociar_por_clustering(coords_ch1, coords_ch4, draw, eps=25, min_samples=1):
     asociaciones = defaultdict(list)
+    if len(coords_ch1) == 0 or len(coords_ch4) == 0:
+        return asociaciones
     clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(coords_ch4)
     labels = clustering.labels_
     for label in set(labels):
@@ -188,10 +190,12 @@ def asociar_por_clustering(coords_ch1, coords_ch4, draw, eps=25, min_samples=1):
         distancias = np.linalg.norm(coords_ch1 - centroide, axis=1)
         idx_min = np.argmin(distancias)
         for par in cluster:
-            asociaciones[idx_min].append(par)
-            x1, y1 = par
-            x2, y2 = coords_ch1[idx_min]
-            draw.line((x1, y1, x2, y2), fill="cyan", width=1)
+            #Solo se asigna el parásito al núcleo más cercano si está dentro de un cierto umbral de distancia
+            if distancias[idx_min] < 200:  # Umbral de distancia grande pero lo suficientemente pequeño para evitar asociaciones erróneas
+                asociaciones[idx_min].append(par)
+                x1, y1 = par
+                x2, y2 = coords_ch1[idx_min]
+                draw.line((x1, y1, x2, y2), fill="cyan", width=1)
     return asociaciones
 
 
@@ -206,3 +210,5 @@ def resumen(asociaciones, total_celulas):
     #Se ha modificado esta funcion del TFM para que además calcule el porcentaje de células infectadas
     pct_infectadas = (infectadas / total_celulas * 100) if total_celulas > 0 else 0
     return infectadas, sanas, media_parasitos, pct_infectadas
+
+

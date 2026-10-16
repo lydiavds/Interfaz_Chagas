@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import cv2
-from pytorch_models import UNet
+from pytorch_models import UNet, UNet_Parasitos
 
 from skimage.feature import peak_local_max
 from scipy.ndimage import gaussian_filter
@@ -311,9 +311,12 @@ path_model_cel_tfg = 'Models/TFG_Lydia/nucleos2.pth'
 # Cargar modelos PyTorch
 # NOTA: Ajusta las clases de modelos según la arquitectura de cada uno
 
-#Modelos utilizados por TFM (trabajo anterior)
-model_p = load_model(path_model_p, model_class=UNet)
-model_c = load_model(path_model_cel, model_class=UNet)
+#Modelos utilizados por TFM (trabajo anterior) por defecto
+#model_p = load_model(path_model_p, model_class=UNet)
+#model_c = load_model(path_model_cel, model_class=UNet)
+
+model_p = None
+model_c = None
 
 #Modelos usados en mi TFG
 #model_p_tfg = None

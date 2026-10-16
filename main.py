@@ -55,7 +55,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.coords_nucleos = np.empty((0, 2), dtype=float)
         self.coords_parasitos = np.empty((0, 2), dtype=float)
+        self.associations = {}
         self.association_lines = []  # [(x1, y1, x2, y2), ...]
+
 
         if hasattr(self, 'checkShowCount'):
             self.checkShowCount.setEnabled(False)
@@ -138,6 +140,48 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.res_media.setText("")
         if hasattr(self, 'res_pct'):
             self.res_pct.setText("")
+        self._update_parasitic_load({})
+
+    def _update_parasitic_load(self, asociaciones):
+        carga_1_15 = 0
+        carga_16_50 = 0
+        carga_mas_50 = 0
+
+        #Para documentar cuantas celulas dentro de este rango tienen cuantos parasitos
+        informe_1_15 = [0] * 16
+
+        for parasitos in asociaciones.values():
+            numero_parasitos = len(parasitos)
+            if 1 <= numero_parasitos <= 15:
+                carga_1_15 += 1
+                informe_1_15[numero_parasitos] += 1
+            elif 16 <= numero_parasitos <= 50:
+                carga_16_50 += 1
+            elif numero_parasitos > 50:
+                carga_mas_50 += 1
+
+        if hasattr(self, 'carga_1_15'):
+            self.carga_1_15.setText(str(carga_1_15))
+        if hasattr(self, 'carga_16_50'):
+            self.carga_16_50.setText(str(carga_16_50))
+        if hasattr(self, 'carga_mas_50'):
+            self.carga_mas_50.setText(str(carga_mas_50))
+        if hasattr(self, 'informe_1_15_layout'):
+            while self.informe_1_15_layout.count():
+                item = self.informe_1_15_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+            #para el conteo de parasitos de las celulas con esta carga parasitaria
+            for numero_parasitos in range(1, 16):
+                numero_celulas = informe_1_15[numero_parasitos]
+                if numero_celulas == 0:
+                    continue
+                termino = "parásito" if numero_parasitos == 1 else "parásitos"
+                fila = QtWidgets.QLabel(
+                    f"{numero_parasitos} {termino}: {numero_celulas}"
+                )
+                self.informe_1_15_layout.addWidget(fila)
 
 
     def set_view_image(self, img_npRGB):
@@ -423,6 +467,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if not same_r:
             self.coords_nucleos = np.empty((0, 2), dtype=float)
             self.coords_parasitos = np.empty((0, 2), dtype=float)
+            self.associations = {}
             self.association_lines = []
 
             if hasattr(self, 'checkShowCount'):
@@ -509,20 +554,51 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         img_pil = Image.fromarray(base_img.copy())
         draw = ImageDraw.Draw(img_pil)
 
-        for x, y in self.coords_nucleos:
-            draw.ellipse((x - 5, y - 5, x + 5, y + 5), outline="white", width=1)
-            draw.ellipse((x - 4, y - 4, x + 4, y + 4), outline="black", width=4)
-            draw.ellipse((x - 4, y - 4, x + 4, y + 4), outline="red", width=3)
-
+        #Dibujar parasitos como cruces amarillas
         for x, y in self.coords_parasitos:
             draw.line((x - 6, y, x + 6, y), fill="black", width=3)
             draw.line((x, y - 6, x, y + 6), fill="black", width=3)
             draw.line((x - 6, y, x + 6, y), fill="yellow", width=2)
             draw.line((x, y - 6, x, y + 6), fill="yellow", width=2)
 
+        #Asociaciones
         for x1, y1, x2, y2 in self.association_lines:
             draw.line((x1, y1, x2, y2), fill="black", width=3)
             draw.line((x1, y1, x2, y2), fill="cyan", width=2)
+
+        # El orden es independiente del teselado y del orden de salida del modelo:
+        # primero se recorre de arriba abajo y, en cada fila, de izquierda a derecha.
+        ordered_nuclei = sorted(
+            (
+                (index, float(x), float(y))
+                for index, (x, y) in enumerate(self.coords_nucleos)
+            ),
+            key=lambda coordinate: (coordinate[2], coordinate[1]),
+        )
+        for cell_number, (index, x, y) in enumerate(ordered_nuclei, start=1):
+            label = str(cell_number)
+            parasite_count = len(self.associations.get(index, []))
+            if parasite_count == 0:
+                outline_color = "red"
+            elif parasite_count <= 15:
+                outline_color = "orange"
+            elif parasite_count <= 50:
+                outline_color = "pink"
+            else:
+                outline_color = "green"
+            text_box = draw.textbbox((x, y), label, anchor="mm")
+            text_width = text_box[2] - text_box[0]
+            text_height = text_box[3] - text_box[1]
+            radius = max(text_width, text_height) / 2 + 5
+            circle_box = (
+                x - radius,
+                y - radius,
+                x + radius,
+                y + radius,
+            )
+            draw.ellipse(circle_box, fill="black", outline=outline_color, width=2)
+            draw.text((x, y), label, fill="white", anchor="mm")
+
 
         return np.array(img_pil)
 
@@ -847,8 +923,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             asociaciones = c_util.asociar_por_clustering(coords_ch1, coords_ch3, draw_aux)
             infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_ch1))
 
+        self._update_parasitic_load(asociaciones)
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch3
+        self.associations = asociaciones
         self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
         if hasattr(self, 'checkShowCount'):
             self.checkShowCount.setEnabled(True)
@@ -903,8 +981,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             infectadas, sanas, media_parasitos = 0, len(coords_ch1), 0.0
             pct_infectadas = 0.0
 
+        self._update_parasitic_load(asociaciones)
         self.coords_nucleos = coords_ch1
         self.coords_parasitos = coords_ch4
+        self.associations = asociaciones
         self.association_lines = self._build_association_lines(asociaciones, coords_ch1)
         if hasattr(self, 'checkShowCount'):
             self.checkShowCount.setEnabled(True)
@@ -932,20 +1012,266 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
 
+
+
+
+
+
+
+    #La función que llama al metodo de conteo del tfg y aplica dbscan
+    def _analizar_tfg(self):
+        """Analiza imagenes basados solo en su canal CH1"""
+        self.state_process.setText(f"Analizando {self.r_number}...")
+        
+        #nucleos y parasitos de la img total
+        n_nucleos = 0
+        n_parasitos = 0
+
+        #Predicciones de cada canal img total
+        pred_parasitos = None
+        pred_nucleos = None
+
+        #Mapas de la imagen total
+        maps_parasitos = None
+        maps_nucleos = None
+
+        #Coords de la imagen total
+        coords_parasitos = np.empty((0, 2), dtype=float)
+        coords_nucleos = np.empty((0, 2), dtype=float)
+
+        #PRIMERO SE COMPRUEBA SI HAY QUE HACER TESELADO O NO (SI TAMAÑO ES MAYOR QUE 1024x1024) 
+        #Si hay que teselar hay que hacerlo sobre canal ch1 y ch3
+
+        #Lista de teselas de ch1
+        teselas_ch1 = []
+        metadatos_ch1 = None
+
+
+        #TESELADO CH1 SI ES NECESARIO
+        #teselado ch1 si dimensiones son mayores que 1024x1024
+        if self.img_ch1 is not None and (self.img_ch1.shape[0] > 1024 or self.img_ch1.shape[1] > 1024):
+            self.state_process.setText(f"Teselando CH1 para {self.r_number}...")
+            teselas_ch1, metadatos_ch1 = tile_image(self.img_ch1)
+
+        #Si son menores que 1024x1024 se añade padding hasta que sea 1024x1024 y se añade a la lista de teselas
+        elif self.img_ch1 is not None and (self.img_ch1.shape[0] < 1024 or self.img_ch1.shape[1] < 1024):
+            teselas_ch1 = [c_util.add_padding(self.img_ch1, target_size=(1024, 1024))]
+
+        #Si uma imagen es exactamente 1024x1024, se añade a la lista de teselas tal cual
+        else:
+            teselas_ch1 = [self.img_ch1] if self.img_ch1 is not None else [] #La lista de teselas sera la unica imagen
+        
+
+
+
+        #Listas de predicciones y mapas de densidad para cada tesela
+        pred_parasitos_list = []
+        maps_parasitos_list = []
+
+        pred_nucleos_list = []
+        maps_nucleos_list = []
+
+        #Las listas de coordenadas de cada tesela (pos 0 seran todas las coordenadas de tesela 0 etc)
+        coords_parasitos_teselas = []
+        coords_nucleos_teselas = []
+
+        # Se llama a la funcion de prediccion de mapas de densidad de nucleos y parasitos sobre ch1 
+        maps_parasitos_list, maps_nucleos_list = ficron.predicciones_tfg(teselas_ch1)
+
+
+
+        # Procesar cada tesela con su mapa correspondiente.
+        for i, _ in enumerate(teselas_ch1):
+            pred_nucleos_list.append(maps_nucleos_list[i])
+            nucleos_tesela, centros_nucleos_yx_tesela = (
+                c_util.detectar_nucleos_maxima_parametrizable_tfg(
+                    pred_nucleos_list[-1],
+                    sigma_suavizado=2,
+                    min_distance=40,
+                    percentil_fondo=30,
+                    diferencia_minima=0.001,
+                )
+            )
+
+            n_nucleos += nucleos_tesela
+            coords_nucleos_teselas.append(
+                np.asarray(
+                    [(float(x), float(y)) for (y, x) in centros_nucleos_yx_tesela],
+                    dtype=float,
+                ).reshape(-1, 2)
+            )
+
+            pred_parasitos_list.append(maps_parasitos_list[i])
+            parasitos_tesela, centros_parasitos_yx_tesela = (
+                c_util.contar_parasitos_tfg(pred_parasitos_list[-1])
+            )
+
+            n_parasitos += parasitos_tesela
+            coords_parasitos_teselas.append(
+                np.asarray(
+                    [(float(x), float(y)) for (y, x) in centros_parasitos_yx_tesela],
+                    dtype=float,
+                ).reshape(-1, 2)
+            )
+
+            origin_x, origin_y = self._tile_origin(i, metadatos_ch1, self.img_ch1)
+
+            coords_nucleos_teselas[-1] += (origin_x, origin_y)
+            coords_parasitos_teselas[-1] += (origin_x, origin_y)
+
+
+
+        #VOLVER A RECONSTRUIR IMG SI ES NECESARIO
+
+        # Reconstruir mapa de densidad de núcleos a partir de teselas
+        if teselas_ch1 and len(teselas_ch1) > 1:
+            
+            nucleos_map = reconstruct_image(maps_nucleos_list, metadatos_ch1)
+            maps_nucleos = [
+                np.zeros_like(nucleos_map),
+                nucleos_map,
+                np.zeros_like(nucleos_map),
+            ]
+        elif maps_nucleos_list:
+            nucleos_map = maps_nucleos_list[0]
+            maps_nucleos = [
+                np.zeros_like(nucleos_map),
+                nucleos_map,
+                np.zeros_like(nucleos_map),
+            ]
+
+
+        # Reconstruir mapa de densidad de parasitos a partir de teselas
+        if teselas_ch1 and len(teselas_ch1) > 1:
+            
+            parasitos_map = reconstruct_image(maps_parasitos_list, metadatos_ch1)
+            maps_parasitos = [
+                parasitos_map,
+                np.zeros_like(parasitos_map),
+                np.zeros_like(parasitos_map),
+            ]
+        elif maps_parasitos_list:
+            parasitos_map = maps_parasitos_list[0]
+            maps_parasitos = [
+                parasitos_map,
+                np.zeros_like(parasitos_map),
+                np.zeros_like(parasitos_map),
+            ]
+
+        
+       
+       
+       
+        # Calcular células infectadas y visualizar en la imagen cargada (img_org_rgb)
+        infectadas = 0
+        sanas = n_nucleos
+        media_parasitos = 0.0
+        pct_infectadas = 0.0
+        asociaciones = {}
+
+        #se ponen como coords_ch1 y coords_ch3 las coordenadas de todas las teselas juntas
+        coords_nucleos = np.vstack(coords_nucleos_teselas) if coords_nucleos_teselas else np.empty((0, 2), dtype=float)
+        coords_parasitos = np.vstack(coords_parasitos_teselas) if coords_parasitos_teselas else np.empty((0, 2), dtype=float)
+        
+        # Asociación parásito -> núcleo si tenemos ambos
+        if len(coords_nucleos_teselas) > 0 and len(coords_parasitos_teselas) > 0:
+            draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
+            #Las asociaciones se hacen con un radio diferente al del tfm que ya testeamos nosotros en google colab
+            asociaciones = c_util.asociar_por_clustering(coords_nucleos, coords_parasitos, draw_aux, eps=50)
+            infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_nucleos))
+
+            print(
+                "Núcleos:",
+                pred_nucleos_list[i].min(),
+                pred_nucleos_list[i].max(),
+                pred_nucleos_list[i].mean()
+            )
+
+            print(
+                "Parásitos:",
+                pred_parasitos_list[i].min(),
+                pred_parasitos_list[i].max(),
+                pred_parasitos_list[i].mean()
+            )
+
+
+        
+
+
+
+        self.coords_nucleos = coords_nucleos
+        self.coords_parasitos = coords_parasitos
+        self.associations = asociaciones
+        self.association_lines = self._build_association_lines(asociaciones, coords_nucleos)
+        if hasattr(self, 'checkShowCount'):
+            self.checkShowCount.setEnabled(True)
+            self.checkShowCount.setChecked(True)
+        self.channel_density_maps = {}
+        if maps_nucleos is not None:
+            self.channel_density_maps[1] = maps_nucleos
+        if maps_parasitos is not None:
+            self.channel_density_maps[3] = maps_parasitos
+        self.density_maps = self.channel_density_maps.get(self.current_display_channel)
+        self.update_view()
+        
+        # Actualizar resultados
+        self.res_par.setText(str(n_parasitos))
+        self.res_macrop.setText(str(n_nucleos))
+        self.res_inf.setText(str(infectadas))
+        if hasattr(self, 'res_sanas'):
+            self.res_sanas.setText(str(sanas))
+        if hasattr(self, 'res_media'):
+            self.res_media.setText(f"{media_parasitos:.2f}")
+        if hasattr(self, 'res_pct'):
+            self.res_pct.setText(f"{pct_infectadas:.1f}%")
+
+        self._update_parasitic_load(asociaciones)
+        
+        self.state_process.setText(
+            f"{self.r_number} | Núcleos (CH1): {n_nucleos}, Parásitos (CH1): {n_parasitos}, "
+            f"Infectadas: {infectadas}, Sanas: {sanas}, Media: {media_parasitos:.2f}"
+        )
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
     #El propio analisis 
     #Será el pipeline 
     def analizar_imagen_actual(self):
 
         #Primero se detecta si se esta en deteccion 1 o 2 (tfm o tfg)
+
+        #Modo 1 es con deteccion de nucleos y parasitos por separado (tfm)
+        if self.count_mode_1:
         
-        # Detectar si estamos en modo multicanal (r*_CH*)
-        if self.r_number is not None and (self.img_ch1 is not None or self.img_ch3 is not None):
-            self._analizar_multicanal()
-        elif self.img_org_2ch is not None:
-            # Modo tradicional (toda la deteccion en la misma imagen)
-            self._analizar_tradicional()
+            # Detectar si estamos en modo multicanal (r*_CH*)
+            if self.r_number is not None and (self.img_ch1 is not None or self.img_ch3 is not None):
+                self._analizar_multicanal()
+            elif self.img_org_2ch is not None:
+                # Modo tradicional (toda la deteccion en la misma imagen)
+                self._analizar_tradicional()
+            else:
+                self.state_process.setText("Primero carga una imagen.")
+
+        #Modo 2 es con deteccion de nucleos y parasitos combinados (tfg)
+        elif self.count_mode_2:
+            if self.r_number is not None and (self.img_ch1 is not None):
+                self._analizar_tfg()
+            else:
+                self.state_process.setText("Primero carga una imagen.")
+
         else:
-            self.state_process.setText("Primero carga una imagen.")
+            self.state_process.setText("Primero elige un modo de detección.")
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
