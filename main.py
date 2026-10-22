@@ -370,7 +370,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Extraer nombre del archivo sin extensión
         basename = os.path.basename(fileName)
         name_without_ext = os.path.splitext(basename)[0]
-        dir_path = os.path.dirname(fileName)
         
         # Detectar cualquier nombre terminado en _CH1, _CH2, _CH3 o _CH4.
         pattern = re.match(r'(?P<base>.+)_CH(?P<channel>[1-4])$', name_without_ext, re.IGNORECASE)
@@ -386,37 +385,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             current_channel = int(pattern.group('channel'))
             self.current_filename = fileName
             
-            # Cargar la imagen actual (la que se mostró en el diálogo)
-            img_raw = np.squeeze(np.asarray(c_util.read_tiff(fileName)))
-            if img_raw.ndim == 2:
-                img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
-            elif img_raw.ndim == 3 and img_raw.shape[2] >= 3:
-                img_raw = img_raw[:, :, :3]
-            elif img_raw.ndim == 3 and img_raw.shape[0] >= 3:
-                img_raw = np.moveaxis(img_raw[:3, :, :], 0, -1)
-            else:
-                raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
-            
-            self.channel_images = {}
+            #Se carga la imagen del dialogo y sus canales relacionados
+            self.channel_images = c_util.load_channel_images(fileName, self.r_number, current_channel)
             if not same_r:
                 self.channel_density_maps = {}
-            supported_extensions = {'.tif', '.tiff', '.lif', '.png', '.jpg', '.jpeg'}
-            for channel_num in (1, 2, 3, 4):
-                channel_stem = f"{self.r_number}_CH{channel_num}".casefold()
-                channel_path = next(
-                    (
-                        os.path.join(dir_path, filename)
-                        for filename in os.listdir(dir_path)
-                        if os.path.splitext(filename)[0].casefold() == channel_stem
-                        and os.path.splitext(filename)[1].casefold() in supported_extensions
-                    ),
-                    None
-                )
-                if channel_path is not None:
-                    self.channel_images[channel_num] = self._load_single_image(channel_path)
-
-            if current_channel not in self.channel_images:
-                self.channel_images[current_channel] = img_raw
 
             self.img_ch1 = self.channel_images.get(1)
             self.img_ch3 = self.channel_images.get(3)
@@ -448,20 +420,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.img_ch3 = None
             self.channel_images = {}
             self.channel_density_maps = {}
-            img_raw = np.squeeze(np.asarray(c_util.read_tiff(fileName)))
-            if img_raw.ndim == 2:
-                img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
-            elif img_raw.ndim == 3 and img_raw.shape[2] >= 3:
-                img_raw = img_raw[:, :, :3]
-            elif img_raw.ndim == 3 and img_raw.shape[0] >= 3:
-                img_raw = np.moveaxis(img_raw[:3, :, :], 0, -1)
-            else:
-                raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
+            img_raw = c_util.read_image_rgb(fileName)
 
             self.img_org_2ch = img_raw
-            img_tmp = c_util.convert_uint8(self.img_org_2ch)
-            self.img_org_rgb = img_tmp
-            self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
+            self.img_org_rgb, self.img_org_2ch_rgb = c_util.prepare_display_images(
+                self.img_org_2ch
+            )
             self.state_process.setText('Imagen cargada (modo tradicional)')
 
         if not same_r:
@@ -480,19 +444,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self._update_zoom_controls_state(self.img_org_2ch is not None)
         self.update_view()
     
-    def _load_single_image(self, filepath):
-        """Carga una imagen individual en formato RGB numpy."""
-        img_raw = np.squeeze(np.asarray(c_util.read_tiff(filepath)))
-        if img_raw.ndim == 2:
-            img_raw = np.stack([img_raw, img_raw, img_raw], axis=-1)
-        elif img_raw.ndim == 3 and img_raw.shape[2] >= 3:
-            img_raw = img_raw[:, :, :3]
-        elif img_raw.ndim == 3 and img_raw.shape[0] >= 3:
-            img_raw = np.moveaxis(img_raw[:3, :, :], 0, -1)
-        else:
-            raise ValueError(f"Formato de imagen no soportado: {img_raw.shape}")
-        return img_raw
-
     def _set_channel_checkbox(self, channel_num):
         if channel_num == 1:
             self.checkCell.setChecked(True)
@@ -518,9 +469,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def _set_current_display_image(self):
         if self.channel_images:
             self.img_org_2ch = self.channel_images.get(self.current_display_channel, next(iter(self.channel_images.values())))
-            img_tmp = c_util.convert_uint8(self.img_org_2ch)
-            self.img_org_rgb = img_tmp
-            self.img_org_2ch_rgb = [c_util.convert_gray2bgr(img_tmp[:, :, i]) for i in range(3)]
+            self.img_org_rgb, self.img_org_2ch_rgb = c_util.prepare_display_images(
+                self.img_org_2ch
+            )
             self.density_maps = self.channel_density_maps.get(self.current_display_channel)
 
     def _update_density_map_toggle(self):

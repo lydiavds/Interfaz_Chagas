@@ -2,6 +2,7 @@
 from PIL import Image, ImageSequence
 import numpy as np
 import cv2
+import os
 from sklearn.cluster import DBSCAN
 from scipy.ndimage import gaussian_filter
 from skimage.feature import peak_local_max
@@ -27,6 +28,51 @@ def read_tiff(path, size_img=None):
     return img_temp
 
 
+def ensure_rgb(img):
+    """Convierte una imagen leída a una matriz RGB manteniendo sus dimensiones."""
+    img_rgb = np.squeeze(np.asarray(img))
+
+    if img_rgb.ndim == 2:
+        return np.stack([img_rgb, img_rgb, img_rgb], axis=-1)
+    if img_rgb.ndim == 3 and img_rgb.shape[2] >= 3:
+        return img_rgb[:, :, :3]
+    if img_rgb.ndim == 3 and img_rgb.shape[0] >= 3:
+        return np.moveaxis(img_rgb[:3, :, :], 0, -1)
+
+    raise ValueError(f"Formato de imagen no soportado: {img_rgb.shape}")
+
+
+def read_image_rgb(path):
+    """Lee una imagen y la devuelve en formato RGB numpy."""
+    return ensure_rgb(read_tiff(path))
+
+
+def load_channel_images(path, r_number, current_channel):
+    """Carga la imagen seleccionada y los canales relacionados disponibles."""
+    directory = os.path.dirname(path)
+    supported_extensions = {'.tif', '.tiff', '.lif', '.png', '.jpg', '.jpeg'}
+    channel_images = {}
+
+    for channel_num in (1, 2, 3, 4):
+        channel_stem = f"{r_number}_CH{channel_num}".casefold()
+        channel_path = next(
+            (
+                os.path.join(directory, filename)
+                for filename in os.listdir(directory)
+                if os.path.splitext(filename)[0].casefold() == channel_stem
+                and os.path.splitext(filename)[1].casefold() in supported_extensions
+            ),
+            None
+        )
+        if channel_path is not None:
+            channel_images[channel_num] = read_image_rgb(channel_path)
+
+    if current_channel not in channel_images:
+        channel_images[current_channel] = read_image_rgb(path)
+
+    return channel_images
+
+
 def convert_uint8(img):
     if img.dtype == np.uint8:
         return img.copy()
@@ -43,6 +89,16 @@ def convert_uint8(img):
 
 def convert_gray2bgr(img):
     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+
+def prepare_display_images(img):
+    """Prepara la imagen normalizada y sus representaciones BGR por canal."""
+    img_uint8 = convert_uint8(img)
+    channel_images = [
+        convert_gray2bgr(img_uint8[:, :, channel])
+        for channel in range(3)
+    ]
+    return img_uint8, channel_images
 
 
 def merge_img_map(img_org, maps):
@@ -210,5 +266,3 @@ def resumen(asociaciones, total_celulas):
     #Se ha modificado esta funcion del TFM para que además calcule el porcentaje de células infectadas
     pct_infectadas = (infectadas / total_celulas * 100) if total_celulas > 0 else 0
     return infectadas, sanas, media_parasitos, pct_infectadas
-
-
