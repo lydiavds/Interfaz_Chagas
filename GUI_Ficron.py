@@ -298,18 +298,28 @@ class Ui_MainWindow(object):
         self.carga_parasitaria_layout.setWidget(
             2, QtWidgets.QFormLayout.FieldRole, self.carga_mas_50
         )
+        self.btn_grafica_rangos = QtWidgets.QPushButton(self.carga_parasitaria)
+        self.btn_grafica_rangos.setEnabled(False)
+        self.btn_grafica_rangos.setObjectName("btn_grafica_rangos")
+        self.carga_parasitaria_layout.setWidget(
+            3, QtWidgets.QFormLayout.SpanningRole, self.btn_grafica_rangos
+        )
         spacer_informe = QtWidgets.QSpacerItem(
             20, 12, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
         )
         self.carga_parasitaria_layout.setItem(
-            3, QtWidgets.QFormLayout.SpanningRole, spacer_informe
+            4, QtWidgets.QFormLayout.SpanningRole, spacer_informe
         )
         self.informe_1_15 = QtWidgets.QGroupBox(self.carga_parasitaria)
         self.informe_1_15.setObjectName("informe_1_15")
         self.informe_1_15_layout = QtWidgets.QVBoxLayout(self.informe_1_15)
         self.informe_1_15_layout.setContentsMargins(8, 8, 8, 8)
+        self.btn_grafica_1_15 = QtWidgets.QPushButton(self.informe_1_15)
+        self.btn_grafica_1_15.setEnabled(False)
+        self.btn_grafica_1_15.setObjectName("btn_grafica_1_15")
+        self.informe_1_15_layout.addWidget(self.btn_grafica_1_15)
         self.carga_parasitaria_layout.setWidget(
-            4, QtWidgets.QFormLayout.SpanningRole, self.informe_1_15
+            5, QtWidgets.QFormLayout.SpanningRole, self.informe_1_15
         )
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
@@ -369,4 +379,6 @@ class Ui_MainWindow(object):
         self.label_10.setText(_translate("MainWindow", "Directorio:"))
         self.carga_parasitaria.setTitle(_translate("MainWindow", "Carga parasitaria"))
         self.informe_1_15.setTitle(_translate("MainWindow", "Informe 1-15 parásitos"))
+        self.btn_grafica_rangos.setText(_translate("MainWindow", "Mostrar gráfica de rangos"))
+        self.btn_grafica_1_15.setText(_translate("MainWindow", "Mostrar gráfica 1-15"))
         self.menuFile.setTitle(_translate("MainWindow", "Archivos"))

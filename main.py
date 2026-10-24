@@ -17,6 +17,10 @@ from PIL import Image, ImageDraw
 import numpy as np
 import seaborn as sns
 
+#Para graficas conteo
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+
 
 #%%
 
@@ -57,6 +61,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.coords_parasitos = np.empty((0, 2), dtype=float)
         self.associations = {}
         self.association_lines = []  # [(x1, y1, x2, y2), ...]
+        self._parasitic_load_counts = [0, 0, 0]
+        self._infection_distribution = [0] * 16
+        self._chart_windows = []
 
 
         if hasattr(self, 'checkShowCount'):
@@ -86,6 +93,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self._update_count_button_state()
         self._update_zoom_controls_state(False)
         self._update_zoom_percent_label()
+        self.btn_grafica_rangos.clicked.connect(self._show_range_chart)
+        self.btn_grafica_1_15.clicked.connect(self._show_1_15_chart)
 
     def _update_count_button_state(self):
         has_image = self.img_org_2ch is not None
@@ -140,7 +149,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.res_media.setText("")
         if hasattr(self, 'res_pct'):
             self.res_pct.setText("")
+        self._parasitic_load_counts = [0, 0, 0]
+        self._infection_distribution = [0] * 16
         self._update_parasitic_load({})
+        self.btn_grafica_rangos.setEnabled(False)
+        self.btn_grafica_1_15.setEnabled(False)
 
     def _update_parasitic_load(self, asociaciones):
         carga_1_15 = 0
@@ -160,6 +173,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             elif numero_parasitos > 50:
                 carga_mas_50 += 1
 
+        self._parasitic_load_counts = [carga_1_15, carga_16_50, carga_mas_50]
+        self._infection_distribution = informe_1_15
+        self.btn_grafica_rangos.setEnabled(True)
+        self.btn_grafica_1_15.setEnabled(True)
+
         if hasattr(self, 'carga_1_15'):
             self.carga_1_15.setText(str(carga_1_15))
         if hasattr(self, 'carga_16_50'):
@@ -167,6 +185,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'carga_mas_50'):
             self.carga_mas_50.setText(str(carga_mas_50))
         if hasattr(self, 'informe_1_15_layout'):
+            button_item = self.informe_1_15_layout.takeAt(0)
+            chart_button = button_item.widget()
             while self.informe_1_15_layout.count():
                 item = self.informe_1_15_layout.takeAt(0)
                 widget = item.widget()
@@ -182,6 +202,54 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     f"{numero_parasitos} {termino}: {numero_celulas}"
                 )
                 self.informe_1_15_layout.addWidget(fila)
+            if chart_button is not None:
+                self.informe_1_15_layout.addWidget(chart_button)
+
+    def _show_chart(self, title, x_labels, values, x_label):
+        window = QtWidgets.QDialog(self)
+        window.setWindowTitle(title)
+        window.resize(760, 520)
+        layout = QtWidgets.QVBoxLayout(window)
+
+        figure = Figure(figsize=(8, 5), tight_layout=True)
+        canvas = FigureCanvas(figure)
+        axes = figure.add_subplot(111)
+        bars = axes.bar(x_labels, values, color="#e67e22")
+        axes.set_title(title)
+        axes.set_xlabel(x_label)
+        axes.set_ylabel("Número de células")
+        axes.grid(axis="y", alpha=0.3)
+        axes.set_axisbelow(True)
+        axes.set_ylim(0, max(values + [1]) * 1.15)
+        for bar, value in zip(bars, values):
+            axes.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                str(value),
+                ha="center",
+                va="bottom",
+            )
+
+        layout.addWidget(canvas)
+        window.finished.connect(lambda: self._chart_windows.remove(window))
+        self._chart_windows.append(window)
+        window.show()
+
+    def _show_range_chart(self):
+        self._show_chart(
+            "Células por rango de infección",
+            ["1-15", "16-50", ">50"],
+            self._parasitic_load_counts,
+            "Rango de parásitos por célula",
+        )
+
+    def _show_1_15_chart(self):
+        self._show_chart(
+            "Células infectadas con 1-15 parásitos",
+            [str(number) for number in range(1, 16)],
+            self._infection_distribution[1:],
+            "Número de parásitos por célula",
+        )
 
 
     def set_view_image(self, img_npRGB):
