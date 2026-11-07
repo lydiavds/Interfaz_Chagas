@@ -371,7 +371,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "FICRON/Interfaz Chagas"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Interfaz Chagas"))
         self.label_zoom.setText(_translate("MainWindow", "Zoom"))
         self.zoom_percent.setText(_translate("MainWindow", "100%"))
         self.btn_zoom_out.setText(_translate("MainWindow", "-"))

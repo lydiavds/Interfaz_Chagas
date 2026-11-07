@@ -1291,6 +1291,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
+
+    icon_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "Icono_Interfaz.png"
+    )
+    icon = QtGui.QIcon(icon_path)
+    app.setWindowIcon(icon)
+
     window = MainWindow()
+    window.setWindowIcon(icon)
     window.show()
     app.exec_()
