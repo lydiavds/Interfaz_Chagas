@@ -185,12 +185,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'carga_mas_50'):
             self.carga_mas_50.setText(str(carga_mas_50))
         if hasattr(self, 'informe_1_15_layout'):
-            button_item = self.informe_1_15_layout.takeAt(0)
-            chart_button = button_item.widget()
             while self.informe_1_15_layout.count():
                 item = self.informe_1_15_layout.takeAt(0)
                 widget = item.widget()
-                if widget is not None:
+                if widget is not None and widget is not self.btn_grafica_1_15:
                     widget.deleteLater()
             #para el conteo de parasitos de las celulas con esta carga parasitaria
             for numero_parasitos in range(1, 16):
@@ -202,8 +200,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     f"{numero_parasitos} {termino}: {numero_celulas}"
                 )
                 self.informe_1_15_layout.addWidget(fila)
-            if chart_button is not None:
-                self.informe_1_15_layout.addWidget(chart_button)
+            self.informe_1_15_layout.addWidget(self.btn_grafica_1_15)
 
     def _show_chart(self, title, x_labels, values, x_label):
         window = QtWidgets.QDialog(self)
@@ -598,13 +595,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             label = str(cell_number)
             parasite_count = len(self.associations.get(index, []))
             if parasite_count == 0:
-                outline_color = "red"
+                outline_color = "#008000"
             elif parasite_count <= 15:
-                outline_color = "orange"
+                outline_color = "#ffa500"
             elif parasite_count <= 50:
-                outline_color = "pink"
+                outline_color = "#ff0099"
             else:
-                outline_color = "green"
+                outline_color = "#ff0000"
             text_box = draw.textbbox((x, y), label, anchor="mm")
             text_width = text_box[2] - text_box[0]
             text_height = text_box[3] - text_box[1]
@@ -671,8 +668,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         layout = QtWidgets.QVBoxLayout(dialog)
         description = QtWidgets.QLabel(
             "Elegir modo de detección\n"
-            "Conteo 1: TFM Miguel\n"
-            "Conteo 2: TFG Lydia"
+            "Conteo 1: Trabajo previo\n"
+            "Conteo 2: TFG"
         )
         layout.addWidget(description)
 
@@ -1106,7 +1103,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 c_util.detectar_nucleos_maxima_parametrizable_tfg(
                     pred_nucleos_list[-1],
                     sigma_suavizado=2,
-                    min_distance=40,
+                    min_distance=60,
                     percentil_fondo=30,
                     diferencia_minima=0.001,
                 )
@@ -1196,7 +1193,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if len(coords_nucleos_teselas) > 0 and len(coords_parasitos_teselas) > 0:
             draw_aux = ImageDraw.Draw(Image.fromarray(self.img_org_rgb.copy()))
             #Las asociaciones se hacen con un radio diferente al del tfm que ya testeamos nosotros en google colab
-            asociaciones = c_util.asociar_por_clustering(coords_nucleos, coords_parasitos, draw_aux, eps=50)
+            asociaciones = c_util.asociar_por_clustering(coords_nucleos, coords_parasitos, draw_aux, eps=60)
             infectadas, sanas, media_parasitos, pct_infectadas = c_util.resumen(asociaciones, len(coords_nucleos))
 
             print(

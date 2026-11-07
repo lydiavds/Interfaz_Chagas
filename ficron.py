@@ -304,7 +304,7 @@ path_model_p = 'Models/TFM_Miguel/fase1_modelo8.pth'
 path_model_cel = 'Models/TFM_Miguel/fase2_modelo2.pth'
 
 # Rutas de los modelos PyTorch de mi TFG
-path_model_p_tfg = 'Models/TFG_Lydia/Parasitos.pth'
+path_model_p_tfg = 'Models/TFG_Lydia/Parasitos3.pth'
 path_model_cel_tfg = 'Models/TFG_Lydia/nucleos2.pth'
 
 

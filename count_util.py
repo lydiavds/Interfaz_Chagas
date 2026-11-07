@@ -162,7 +162,8 @@ def contar_parasitos_dbscan(img_original, density_map, threshold_rel=0.35, eps=2
 
 #PARÁSITOS TFG
 def contar_parasitos_tfg(density_map):
-    threshold = max(0.1, density_map.max() * 0.3) #threshold adaptativo
+    #threshold = max(0.1, density_map.max() * 0.3) #threshold adaptativo
+    threshold=0.5
     parasitos_detectados = peak_local_max(density_map, min_distance=5, threshold_abs=threshold)
 
     return len(parasitos_detectados), parasitos_detectados #Con parasitos_detectados siendo pd[0]=y, pd[1]=x
@@ -191,7 +192,7 @@ def detectar_parasitos_maxima_parametrizable(pred, sigma_suavizado=3, min_distan
 #NÚCLEOS CELULARES TFG
 
 #Igual que TFM pero radio del vecindario depende del sigma y tiene threshold absoluto para descartar picos muy bajos
-def detectar_nucleos_maxima_parametrizable_tfg(pred, sigma_suavizado=2, min_distance=40, percentil_fondo=30, diferencia_minima=0.001):
+def detectar_nucleos_maxima_parametrizable_tfg(pred, sigma_suavizado=2, min_distance=0, percentil_fondo=30, diferencia_minima=0.001):
     # 1. Suavizado gaussiano
     smoothed = gaussian_filter(pred, sigma=sigma_suavizado)
 

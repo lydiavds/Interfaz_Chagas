@@ -139,11 +139,11 @@ class Ui_MainWindow(object):
         self.label_6.setEnabled(True)
         self.label_6.setText("<html><head/><body><p><span style=\" font-weight:600;\">Parásitos:</span></p></body></html>")
         self.label_6.setObjectName("label_6")
-        self.formLayout.setWidget(4, QtWidgets.QFormLayout.LabelRole, self.label_6)
+        self.formLayout.setWidget(5, QtWidgets.QFormLayout.LabelRole, self.label_6)
         self.label_7 = QtWidgets.QLabel(self.layoutWidget)
         self.label_7.setText("<html><head/><body><p><span style=\" font-weight:600;\">Células no infectadas:</span></p></body></html>")
         self.label_7.setObjectName("label_7")
-        self.formLayout.setWidget(5, QtWidgets.QFormLayout.LabelRole, self.label_7)
+        self.formLayout.setWidget(4, QtWidgets.QFormLayout.LabelRole, self.label_7)
         self.label_8 = QtWidgets.QLabel(self.layoutWidget)
         self.label_8.setText("<html><head/><body><p><span style=\" font-weight:600;\">Media Parásitos por Célula:</span></p></body></html>")
         self.label_8.setObjectName("label_8")
@@ -170,10 +170,10 @@ class Ui_MainWindow(object):
             "<p style='margin: 0px;'><b>Células</b></p>"
             "<table cellspacing='8' cellpadding='0'>"
             "<tr>"
-            "<td bgcolor='#ff0000' width='20' height='16'>&nbsp;</td><td>Sanas</td>"
+            "<td bgcolor='#008000' width='20' height='16'>&nbsp;</td><td>Sanas</td>"
             "<td bgcolor='#ffa500' width='20' height='16'>&nbsp;</td><td>1-15</td>"
             "<td bgcolor='#ff0099' width='20' height='16'>&nbsp;</td><td>16-50</td>"
-            "<td bgcolor='#008000' width='20' height='16'>&nbsp;</td><td>&gt;50</td>"
+            "<td bgcolor='#ff0000' width='20' height='16'>&nbsp;</td><td>&gt;50</td>"
             "</tr></table>"
             "<p style='margin: 8px 0px 0px 0px;'><b>Otras detecciones</b></p>"
             "<table cellspacing='8' cellpadding='0'>"
@@ -215,14 +215,14 @@ class Ui_MainWindow(object):
         self.res_par.setAlignment(QtCore.Qt.AlignCenter)
         self.res_par.setText("")
         self.res_par.setObjectName("res_par")
-        self.formLayout.setWidget(4, QtWidgets.QFormLayout.FieldRole, self.res_par)
+        self.formLayout.setWidget(5, QtWidgets.QFormLayout.FieldRole, self.res_par)
         self.res_sanas = QtWidgets.QLabel(self.layoutWidget)
         self.res_sanas.setStyleSheet("background-color: rgb(255, 255, 255);\n"
 "color: rgb(0, 0, 0)")
         self.res_sanas.setAlignment(QtCore.Qt.AlignCenter)
         self.res_sanas.setText("")
         self.res_sanas.setObjectName("res_sanas")
-        self.formLayout.setWidget(5, QtWidgets.QFormLayout.FieldRole, self.res_sanas)
+        self.formLayout.setWidget(4, QtWidgets.QFormLayout.FieldRole, self.res_sanas)
         self.res_media = QtWidgets.QLabel(self.layoutWidget)
         self.res_media.setStyleSheet("background-color: rgb(255, 255, 255);\n"
 "color: rgb(0,0,0)")
