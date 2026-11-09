@@ -641,10 +641,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
 
     def count_img(self):
-        if not self._choose_detection_mode():
-            return
-
-        selected_mode = 1 if self.count_mode_1 else 2
+        self.count_mode_1 = False
+        self.count_mode_2 = True
+        selected_mode = 2
         try:
             ficron.set_detection_mode(selected_mode)
         except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
